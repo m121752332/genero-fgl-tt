@@ -86,6 +86,26 @@
                     "name": "storage.type.4gl"
                 },
                 {
+                    "match": "\\b(?i)(CALL|RETURN|RETURNING)\\b",
+                    "name": "keyword.control.color.yellow.4gl",
+                    "comment" :"讓特殊關鍵字就顯示黃色"
+                },
+                {
+                    "match": "\\b(?i)(java\\.io(\\.[A-Za-z0-9_\\*]+)*)\\b",
+                    "name": "keyword.control.color.yellow.4gl",
+                    "comment" :"讓特殊關鍵字就顯示黃色"
+                },
+                {
+                    "match": "\\b(?i)(ui\\.[A-Za-z0-9_\\.]+)\\b",
+                    "name": "keyword.control.color.yellow.4gl",
+                    "comment" :"讓特殊關鍵字就顯示黃色"
+                },
+                {
+                    "match": "\\b(?i)(om\\.[A-Za-z0-9_\\.]+)\\b",
+                    "name": "keyword.control.color.yellow.4gl",
+                    "comment" :"讓特殊關鍵字就顯示黃色"
+                },
+                {
                     "match": "\\b(?i)(ABSOLUTE|ACCELERATOR|ACCEPT|ACCESSORYTYPE|ACTION|ADD|AFTER|ALL|ALTER|AND|ANSI|ANY|APPEND|APPLICATION|ARRAY|AS|ASC|ASCENDING|ASCII|AT|ATTRIBUTE|ATTRIBUTES|AUDIT|AUTHORIZATION|AUTO|AVG)\\b",
                     "name": "keyword.control.4gl"
                 },

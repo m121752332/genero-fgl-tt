@@ -2,7 +2,7 @@
     "name": "genero-fgl",
     "displayName": "Genero-FGL",
     "description": "",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "publisher": "m121752332",
     "repository": {
         "type": "git",
@@ -366,6 +366,10 @@
             "esbuild": "npm run esbuild-base -- --sourcemap",
             "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
             "test-compile": "tsc -p ./"
+    ,
+    "build-and-package": "npm run esbuild && npm run package",
+    "install-vsix": "code --install-extension ./genero-fgl-0.1.2.vsix",
+    "build-install": "npm run build-and-package && npm run install-vsix"
     },
     "devDependencies": {
         "@types/node": "*",
