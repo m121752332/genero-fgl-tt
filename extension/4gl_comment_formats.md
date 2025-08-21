@@ -142,20 +142,19 @@
 
 ```json
 "editor.tokenColorCustomizations": {
-    "textMateRules": [
-        { "scope": "entity.name.function.4gl", "settings": { "foreground": "#eef9ff", "fontStyle": "bold" } },
-        { "scope": "keyword.declaration.function.4gl", "settings": { "foreground": "#74c0ff" } },   
-        { "scope": "keyword.control.4gl", "settings": { "foreground": "#ff8b1f" } },
-        { "scope": "support.function.call.4gl", "settings": { "foreground": "#efff09" } },
-        { "scope": "comment.4gl", "settings": { "foreground": "#FF0000", "fontStyle": "italic" } },
-        { "scope": "constant.numeric.4gl", "settings": { "foreground": "#78ff6c" } },
-        { "scope": "storage.type.4gl", "settings": { "foreground": "#f3f97d" } },
-        { "scope": "keyword.operator.4gl", "settings": { "foreground": "#fd3a3a" } },
-        { "scope": "comment.line.number-sign.4gl", "settings": { "foreground": "#6ecb7b" } },
-        { "scope": "comment.line.double-dash.4gl", "settings": { "foreground": "#6ecb7b" } },
-        { "scope": "comment.block.4gl", "settings": { "foreground": "#6ecb7b" } },
-        { "scope": "string.quoted.single.4gl", "settings": { "foreground": "#71c4ff" } },
-        { "scope": "string.quoted.double.4gl", "settings": { "foreground": "#71c4ff" } },
-    ]
-}
+		"textMateRules": [ 
+			{ "scope": "keyword.control.color.yellow.4gl", "settings": { "foreground": "#fff81f" } },
+			{ "scope": "keyword.control.4gl", "settings": { "foreground": "#ff8b1f" } },
+			{ "scope": "support.function.call.4gl", "settings": { "foreground": "#efff09" } },
+			{ "scope": "comment.4gl", "settings": { "foreground": "#FF0000", "fontStyle": "italic" } },
+            { "scope": "constant.numeric.4gl", "settings": { "foreground": "#78ff6c" } },
+            { "scope": "storage.type.4gl", "settings": { "foreground": "#f3f97d" } },
+            { "scope": "keyword.operator.4gl", "settings": { "foreground": "#a48bf9" } },
+            { "scope": "comment.line.number-sign.4gl", "settings": { "foreground": "#6ecb7b" } },
+            { "scope": "comment.line.double-dash.4gl", "settings": { "foreground": "#6ecb7b" } },
+            { "scope": "comment.block.4gl", "settings": { "foreground": "#6ecb7b" } },
+            { "scope": "string.quoted.single.4gl", "settings": { "foreground": "#71c4ff" } },
+            { "scope": "string.quoted.double.4gl", "settings": { "foreground": "#71c4ff" } },
+		]
+	}
 ```
