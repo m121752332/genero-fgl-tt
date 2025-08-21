@@ -1,0 +1,48 @@
+# Node
+node_modules/
+npm-debug.log*
+pnpm-lock.yaml
+yarn-error.log
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Packaging / build artifacts
+*.vsix
+.vscodeignore
+**/out/
+**/dist/
+**/build/
+
+# Logs
+logs/
+*.log
+*.gz
+
+# Runtime files
+pids/
+*.pid
+*.seed
+
+# Environment
+.env
+.env.*.local
+
+# Tests
+coverage/
+.nyc_output/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+.eslintcache
+*.tgz
+
+# Ignore extension codes folder
+extension/codes/
+
+# Ignore generated README_ZH if you prefer not to track it (optional)
+# extension/README_ZH.md
