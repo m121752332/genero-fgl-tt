@@ -22,6 +22,11 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
   const reEndFunction = /^\s*END\s+FUNCTION\b/i;
   const reEndReport = /^\s*END\s+REPORT\b/i;
   const reEndMain = /^\s*END\s+MAIN\b/i;
+  // common statement starters that are NOT part of DEFINE continuation
+  const reNonDefineStmt = /^\s*(LET|MESSAGE|DISPLAY|PRINT|CALL|IF|ELSE|CASE|WHEN|FOR|FOREACH|WHILE|RETURN|OPEN|CLOSE|PREPARE|EXECUTE|SELECT|INSERT|UPDATE|DELETE|INITIALIZE|CONSTRUCT|INPUT|MENU|PROMPT|SLEEP|ERROR|WARN|INFO|OPTIONS|GLOBALS)\b/i;
+  // a conservative check for lines that look like a DEFINE continuation (names and optional type)
+  const reTypeWord = /(LIKE|STRING|INTEGER|DATE|CHAR|NUM|REAL|DECIMAL|FLOAT|SMALLINT|BIGINT|VARCHAR|NUMERIC|BOOLEAN)\b/i;
+  const reDefineContinuation = /^\s*(?:DEFINE\s+)?[A-Za-z0-9_,\s]+(?:\b(LIKE|STRING|INTEGER|DATE|CHAR|NUM|REAL|DECIMAL|FLOAT|SMALLINT|BIGINT|VARCHAR|NUMERIC|BOOLEAN)\b.*)?\s*,?\s*(?:#.*)?$/i;
   let currentFunction: vscode.DocumentSymbol | null = null;
   let inMain = false;
 
@@ -35,7 +40,7 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
     if (mFunc) {
       const name = mFunc[1];
       const r = new vscode.Range(i, 0, i, Math.max(1, line.length));
-      const sym = new vscode.DocumentSymbol(name, 'FUNCTION', vscode.SymbolKind.Function, r, r);
+  const sym = new vscode.DocumentSymbol(name, '', vscode.SymbolKind.Function, r, r);
       functionsGroup.children.push(sym);
       currentFunction = sym;
       continue;
@@ -46,7 +51,7 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
     if (mRep) {
       const name = mRep[1];
       const r = new vscode.Range(i, 0, i, Math.max(1, line.length));
-      const sym = new vscode.DocumentSymbol(name, 'REPORT', vscode.SymbolKind.Method, r, r);
+  const sym = new vscode.DocumentSymbol(name, '', vscode.SymbolKind.Method, r, r);
       reportsGroup.children.push(sym);
       currentFunction = sym;
       continue;
@@ -64,16 +69,21 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
     if (reEndReport.test(line))   { currentFunction = null; continue; }
     if (reEndMain.test(line))     { inMain = false; continue; }
 
-    // DEFINE block handling (improved): treat RECORD blocks atomically and collect other comma-separated fragments
+    // DEFINE block handling (tightened): treat RECORD blocks atomically and collect only proper DEFINE continuation lines
     if (reDefineStart.test(line)) {
       // collect contiguous lines that belong to this DEFINE (lines until next top-level token)
       const blockLines: string[] = [line];
       let j = i;
       while (j + 1 < lines.length) {
         const nxt = lines[j + 1];
-        // stop if next line starts a new top-level construct (FUNCTION/REPORT/IMPORT/DATABASE/GLOBALS/DEFINE)
-        if (/^\s*(?:FUNCTION|REPORT|IMPORT|DATABASE|GLOBALS|DEFINE)\b/i.test(nxt)) break;
-        // otherwise include continuation lines
+        // stop if next line starts a new top-level construct or another DEFINE
+        if (/^\s*(?:FUNCTION|REPORT|MAIN|IMPORT|DATABASE|GLOBALS|DEFINE)\b/i.test(nxt)) break;
+        // stop if next line obviously starts a normal statement rather than a DEFINE continuation
+        if (reNonDefineStmt.test(nxt)) break;
+        // allow record block lines or conservative DEFINE-like continuations; otherwise stop
+        const isRecordLine = /\bRECORD\b/i.test(nxt) || /^\s*END\s+RECORD\b/i.test(nxt);
+        if (!isRecordLine && !reDefineContinuation.test(nxt.trim())) break;
+        // include continuation line
         j++;
         blockLines.push(nxt);
       }
@@ -81,8 +91,10 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
       const blockEnd = j;
       i = j;
 
-      // remove inline comments but keep commas and newlines for parsing
-      const cleanedLines = blockLines.map(l => l.replace(/#.*/g, ''));
+      // remove inline comments but keep commas and newlines for parsing; skip pure comment lines
+      const cleanedLines = blockLines
+        .map(l => l.replace(/#.*/g, ''))
+        .filter(l => l.trim().length > 0);
 
       // parse block lines into segments: either record blocks or normal fragments
       const normalParts: string[] = [];
@@ -115,7 +127,11 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
           continue;
         }
         // not a record start: split this line by commas and append parts
-        const segs = ln.split(',').map(s => s.trim()).filter(Boolean);
+        // also strip any leading 'DEFINE ' token to avoid names like 'DEFINE l_var'
+        const segs = ln
+          .split(',')
+          .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
+          .filter(Boolean);
         normalParts.push(...segs);
         k++;
       }
@@ -123,7 +139,7 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
       // emit record symbols first
       for (const rec of recordSegments) {
         const r = new vscode.Range(blockStart, 0, blockEnd, Math.max(1, lines[blockEnd].length));
-        const recSym = new vscode.DocumentSymbol(rec.name, 'RECORD', vscode.SymbolKind.Struct, r, r);
+  const recSym = new vscode.DocumentSymbol(rec.name, '', vscode.SymbolKind.Struct, r, r);
         const fldRegex = /([A-Za-z0-9_]+)\s+LIKE\s+([A-Za-z0-9_\.]+)/ig;
         let fm: RegExpExecArray | null;
         while ((fm = fldRegex.exec(rec.body)) !== null) {
@@ -139,14 +155,19 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
       if (afterDefine) {
         const parts = afterDefine.split(',').map(p => p.trim()).filter(Boolean);
         let pending: string[] = [];
+        let sawType = false;
         for (const part of parts) {
           // skip pure keywords that shouldn't be treated as names
           if (/^(DEFINE|END|RECORD)$/i.test(part)) continue;
-          const mt = part.match(/\b(LIKE|STRING|INTEGER|DATE|CHAR|NUM|REAL|DECIMAL)\b/i);
+          const mt = part.match(reTypeWord);
           if (mt) {
             const idx = part.search(new RegExp(`\\b${mt[1]}\\b`, 'i'));
             const namesStr = idx >= 0 ? part.substring(0, idx) : part;
-            const names = namesStr.split(',').map(s => s.trim()).filter(Boolean).filter(n => !/^(DEFINE|END|RECORD)$/i.test(n));
+            const names = namesStr
+              .split(',')
+              .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
+              .filter(Boolean)
+              .filter(n => !/^(DEFINE|END|RECORD)$/i.test(n));
             const all = pending.concat(names);
             for (const nm of all) {
               if (!nm) continue;
@@ -157,19 +178,17 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
               else moduleVarsGroup.children.push(vsym);
             }
             pending = [];
+            sawType = true;
           } else {
-            const names = part.split(',').map(s => s.trim()).filter(Boolean).filter(n => !/^(DEFINE|END|RECORD)$/i.test(n));
+            const names = part
+              .split(',')
+              .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
+              .filter(Boolean)
+              .filter(n => !/^(DEFINE|END|RECORD)$/i.test(n));
             pending.push(...names);
           }
         }
-        for (const nm of pending) {
-          if (!nm) continue;
-          const vr = new vscode.Range(blockStart, 0, blockEnd, Math.max(1, lines[blockEnd].length));
-          const vsym = new vscode.DocumentSymbol(nm, '', vscode.SymbolKind.Variable, vr, vr);
-          if (currentFunction) currentFunction.children.push(vsym);
-          else if (inMain) mainGroup.children.push(vsym);
-          else moduleVarsGroup.children.push(vsym);
-        }
+        // don't emit dangling names without a detected type to avoid false positives
       }
 
       continue;
@@ -187,7 +206,7 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
         k++;
       }
       const r = new vscode.Range(i, 0, k < lines.length ? k : i, Math.max(1, lines[k] ? lines[k].length : lines[i].length));
-      const recSym = new vscode.DocumentSymbol(recName, 'RECORD', vscode.SymbolKind.Struct, r, r);
+  const recSym = new vscode.DocumentSymbol(recName, '', vscode.SymbolKind.Struct, r, r);
       for (const fn of rfields) recSym.children.push(new vscode.DocumentSymbol(fn, '', vscode.SymbolKind.Field, r, r));
   if (currentFunction) currentFunction.children.push(recSym);
   else if (inMain) mainGroup.children.push(recSym);
