@@ -1,4 +1,4 @@
-# [English](README.md)｜[繁體中文](README_ZH.md)
+# [English](/extension/README.md)｜[繁體中文](/extension/README_ZH.md)
 # Genero fglcomp/fglform command adapter
 
 ## Provides
