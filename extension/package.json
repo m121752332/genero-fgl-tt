@@ -2,7 +2,7 @@
     "name": "genero-fgl",
     "displayName": "Genero-FGL",
     "icon": "images/tiptop.ico",
-    "description": "An essential tool designed to empower developers with a smooth and enjoyable experience when editing TIPTOP source code using Genero 4GL.\n一個旨在為開發人員提供平滑愉快的編輯TIPTOP源代碼體驗的工具，使用Genero 4GL。",
+    "description": "An essential tool designed to empower developers with a smooth and enjoyable experience when editing TIPTOP source code using Genero 4GL.",
     "version": "0.1.4",
     "publisher": "m121752332",
     "repository": {
