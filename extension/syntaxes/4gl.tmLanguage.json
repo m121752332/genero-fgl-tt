@@ -91,9 +91,14 @@
                     "comment" :"讓特殊關鍵字就顯示黃色"
                 },
                 {
-                    "match": "\\b(?i)(java\\.io(\\.[A-Za-z0-9_\\*]+)*)\\b",
-                    "name": "keyword.control.color.yellow.4gl",
-                    "comment" :"讓特殊關鍵字就顯示黃色"
+                    "match": "\\b(?i)IMPORT\\s+(?:JAVA|FGL)\\b\\s+([A-Za-z0-9_\\.\\*]+)",
+                    "captures": {
+                        "1": {
+                            "name": "keyword.control.color.yellow.4gl"
+                        }
+                    },
+                    "name": "keyword.control.4gl",
+                    "comment": "IMPORT 後的 package 顯示為黃色，例如 IMPORT JAVA java.io.*"
                 },
                 {
                     "match": "\\b(?i)(ui\\.[A-Za-z0-9_\\.]+)\\b",
