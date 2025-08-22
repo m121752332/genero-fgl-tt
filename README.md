@@ -1,3 +1,5 @@
+<img width="128px" src="https://raw.githubusercontent.com/m121752332/genero-fgl-tt/refs/heads/main/extension/images/tiptop.ico" />
+
 # genero-fgl 語法修飾器
 
 [![Marketplace Version](https://vsmarketplacebadges.dev/version-short/m121752332.genero-fgl.png)](https://marketplace.visualstudio.com/items?itemName=m121752332.genero-fgl)
