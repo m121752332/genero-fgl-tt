@@ -86,7 +86,7 @@
                     "name": "storage.type.4gl"
                 },
                 {
-                    "match": "\\b(?i)(CALL|RETURN|RETURNING)\\b",
+                    "match": "\\b(?i)(CALL|RETURN|RETURNING|INT_FLAG|SFMT)\\b",
                     "name": "keyword.control.color.yellow.4gl",
                     "comment" :"讓特殊關鍵字就顯示黃色"
                 },
@@ -116,7 +116,7 @@
                     "comment" :"讓特殊關鍵字就顯示紅色"
                 },
                 {
-                    "match": "\\b(?i)(ABSOLUTE|ACCELERATOR|ACCEPT|ACCESSORYTYPE|ACTION|ADD|AFTER|ALL|ALTER|AND|ANSI|ANY|APPEND|APPLICATION|ARRAY|AS|ASC|ASCENDING|ASCII|AT|ATTRIBUTE|ATTRIBUTES|AUDIT|AUTHORIZATION|AUTO|AVG)\\b",
+                    "match": "\\b(?i)(ABSOLUTE|ACCELERATOR|ACCEPT|ACCESSORYTYPE|ACTION|ADD|AFTER|ALL|ALTER|AND|ANSI|ANY|APPEND|APPLICATION|ARRAY|ARG_VAL|AS|ASC|ASCENDING|ASCII|AT|ATTRIBUTE|ATTRIBUTES|AUDIT|AUTHORIZATION|AUTO|AVG)\\b",
                     "name": "keyword.control.4gl"
                 },
                 {
