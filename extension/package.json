@@ -1,9 +1,9 @@
 {
     "name": "genero-fgl",
     "displayName": "Genero-FGL",
-    "icon": "images/logo.ico",
+    "icon": "images/tiptop.ico",
     "description": "An essential tool designed to empower developers with a smooth and enjoyable experience when editing TIPTOP source code using Genero 4GL.\n一個旨在為開發人員提供平滑愉快的編輯TIPTOP源代碼體驗的工具，使用Genero 4GL。",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "publisher": "m121752332",
     "repository": {
         "type": "git",
@@ -369,7 +369,7 @@
             "test-compile": "tsc -p ./"
     ,
     "build-and-package": "npm run esbuild && npm run package",
-    "install-vsix": "code --install-extension ./genero-fgl-0.1.3.vsix",
+    "install-vsix": "code --install-extension ./genero-fgl-0.1.4.vsix",
     "build-install": "npm run build-and-package && npm run install-vsix"
     },
     "devDependencies": {
