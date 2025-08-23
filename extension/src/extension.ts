@@ -248,28 +248,81 @@ class FourGLDefinitionProvider implements vscode.DefinitionProvider {
     const word = document.getText(wordRange);
     const shortName = word.includes('.') ? word.split('.').pop() || word : word;
 
+    // Get the line containing the word to determine if it's a report or function call
+    const line = document.lineAt(position.line).text;
+    const isReportCall = /\b(START\s+REPORT|OUTPUT\s+TO\s+REPORT|FINISH\s+REPORT)\b/i.test(line);
+    
+    // Debug information
+    const debugInfo = `Word: '${word}', Line: '${line.trim()}', IsReportCall: ${isReportCall}`;
+    console.log(`[DEBUG] ${debugInfo}`);
+    
     // search in current document
     const lines = document.getText().split(/\r?\n/);
-    const reFuncLine = new RegExp(`^\\s*(?:PUBLIC|PRIVATE|STATIC)?\\s*FUNCTION\\s+${shortName}\\b`, 'i');
-    for (let i = 0; i < lines.length; i++) {
-      if (reFuncLine.test(lines[i])) return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
+    
+    if (isReportCall) {
+      // Search for REPORT definition
+      const reRepLine = new RegExp(`^\\s*REPORT\\s+${shortName}\\b`, 'i');
+      console.log(`[DEBUG] Searching for REPORT pattern: ${reRepLine.source}`);
+      for (let i = 0; i < lines.length; i++) {
+        if (reRepLine.test(lines[i])) {
+          console.log(`[DEBUG] Found REPORT at line ${i + 1}: '${lines[i].trim()}'`);
+          vscode.window.showInformationMessage(`Found REPORT '${shortName}' at line ${i + 1}`);
+          return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
+        }
+      }
+      console.log(`[DEBUG] REPORT '${shortName}' not found in current document`);
+      vscode.window.showWarningMessage(`REPORT '${shortName}' not found in current document`);
+    } else {
+      // Search for FUNCTION definition
+      const reFuncLine = new RegExp(`^\\s*(?:PUBLIC|PRIVATE|STATIC)?\\s*FUNCTION\\s+${shortName}\\b`, 'i');
+      console.log(`[DEBUG] Searching for FUNCTION pattern: ${reFuncLine.source}`);
+      for (let i = 0; i < lines.length; i++) {
+        if (reFuncLine.test(lines[i])) {
+          console.log(`[DEBUG] Found FUNCTION at line ${i + 1}: '${lines[i].trim()}'`);
+          vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' at line ${i + 1}`);
+          return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
+        }
+      }
+      console.log(`[DEBUG] FUNCTION '${shortName}' not found in current document`);
     }
 
     // search other workspace files
     const files = await vscode.workspace.findFiles('**/*.{4gl,4GL}', '**/node_modules/**', 500);
+    console.log(`[DEBUG] Searching in ${files.length} workspace files`);
     for (const f of files) {
       if (f.toString() === document.uri.toString()) continue;
       try {
         const doc = await vscode.workspace.openTextDocument(f);
         const docLines = doc.getText().split(/\r?\n/);
-        for (let i = 0; i < docLines.length; i++) {
-          if (reFuncLine.test(docLines[i])) return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
+        
+        if (isReportCall) {
+          // Search for REPORT definition in other files
+          const reRepLine = new RegExp(`^\\s*REPORT\\s+${shortName}\\b`, 'i');
+          for (let i = 0; i < docLines.length; i++) {
+            if (reRepLine.test(docLines[i])) {
+              console.log(`[DEBUG] Found REPORT in ${f.fsPath} at line ${i + 1}`);
+              vscode.window.showInformationMessage(`Found REPORT '${shortName}' in ${f.fsPath} at line ${i + 1}`);
+              return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
+            }
+          }
+        } else {
+          // Search for FUNCTION definition in other files
+          const reFuncLine = new RegExp(`^\\s*(?:PUBLIC|PRIVATE|STATIC)?\\s*FUNCTION\\s+${shortName}\\b`, 'i');
+          for (let i = 0; i < docLines.length; i++) {
+            if (reFuncLine.test(docLines[i])) {
+              console.log(`[DEBUG] Found FUNCTION in ${f.fsPath} at line ${i + 1}`);
+              vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' in ${f.fsPath} at line ${i + 1}`);
+              return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
+            }
+          }
         }
       } catch {
         // ignore
       }
     }
 
+    console.log(`[DEBUG] No definition found for '${shortName}' (isReportCall: ${isReportCall})`);
+    vscode.window.showWarningMessage(`No definition found for '${shortName}'${isReportCall ? ' (REPORT)' : ' (FUNCTION)'}`);
     return null;
   }
 }

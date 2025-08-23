@@ -8,6 +8,9 @@ yarn-error.log
 .vscode/
 *.code-workspace
 
+# Qoder
+.qoder/
+
 # Packaging / build artifacts
 *.vsix
 .vscodeignore
