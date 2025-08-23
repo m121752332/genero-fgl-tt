@@ -368,8 +368,8 @@
             "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
             "test-compile": "tsc -p ./"
     ,
-    "build-and-package": "npm run esbuild && npm run package",
-    "install-vsix": "code --install-extension ./genero-fgl-0.1.4.vsix",
+    "build-and-package": "node ./scripts/build-and-package.js",
+    "install-vsix": "node ./scripts/install-vsix.js",
     "build-install": "npm run build-and-package && npm run install-vsix"
     },
     "devDependencies": {
