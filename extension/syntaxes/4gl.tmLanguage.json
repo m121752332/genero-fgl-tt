@@ -8,6 +8,9 @@
             "include": "#comments"
         },
         {
+            "include": "#type-record-structures"
+        },
+        {
             "include": "#keywords"
         },
         {
@@ -58,6 +61,90 @@
         }
     ],
     "repository": {
+        "type-record-structures": {
+            "patterns": [
+                {
+                    "begin": "\\b(?i)(TYPE)\\s+([A-Za-z0-9_]+)\\s+(RECORD)\\b",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "keyword.control.4gl"
+                        },
+                        "2": {
+                            "name": "entity.name.type.4gl"
+                        },
+                        "3": {
+                            "name": "keyword.control.4gl"
+                        }
+                    },
+                    "end": "\\b(?i)(END)\\s+(RECORD)\\b",
+                    "endCaptures": {
+                        "1": {
+                            "name": "keyword.control.4gl"
+                        },
+                        "2": {
+                            "name": "keyword.control.4gl"
+                        }
+                    },
+                    "name": "meta.type.record.4gl",
+                    "patterns": [
+                        {
+                            "include": "#comments"
+                        },
+                        {
+                            "match": "^\\s*([A-Za-z0-9_]+)\\s+(LIKE)\\s+([A-Za-z0-9_\\.]+)\\s*,?\\s*",
+                            "captures": {
+                                "1": {
+                                    "name": "variable.other.field.4gl"
+                                },
+                                "2": {
+                                    "name": "keyword.control.4gl"
+                                },
+                                "3": {
+                                    "name": "entity.name.type.4gl"
+                                }
+                            }
+                        },
+                        {
+                            "match": "^\\s*([A-Za-z0-9_]+)\\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\\s*,?\\s*",
+                            "captures": {
+                                "1": {
+                                    "name": "variable.other.field.4gl"
+                                },
+                                "2": {
+                                    "name": "storage.type.4gl"
+                                }
+                            }
+                        },
+                        {
+                            "match": "^\\s*([A-Za-z0-9_]+)\\s+(CHAR|VARCHAR|DECIMAL)\\s*\\([^)]+\\)\\s*,?\\s*",
+                            "captures": {
+                                "1": {
+                                    "name": "variable.other.field.4gl"
+                                },
+                                "2": {
+                                    "name": "storage.type.4gl"
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "match": "\\b(?i)(TYPE)\\s+([A-Za-z0-9_]+)\\s+((?:DYNAMIC\\s+)?ARRAY\\s*\\[\\]\\s*OF\\s+[A-Za-z0-9_\\.]+|[A-Za-z0-9_\\.]+)\\b",
+                    "captures": {
+                        "1": {
+                            "name": "keyword.control.4gl"
+                        },
+                        "2": {
+                            "name": "entity.name.type.4gl"
+                        },
+                        "3": {
+                            "name": "storage.type.4gl"
+                        }
+                    },
+                    "name": "meta.type.definition.4gl"
+                }
+            ]
+        },
         "comments": {
             "patterns": [
                 {

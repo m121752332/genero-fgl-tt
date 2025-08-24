@@ -15,9 +15,10 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
   const reFunction = /^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\b/i;
   const reReport = /^\s*REPORT\s+([A-Za-z0-9_]+)\b/i;
   const reMainStart = /^\s*MAIN\b/i;
-  const reRecordStart = /([A-Za-z0-9_]+)\s+RECORD\b/i;
+  const reRecordStart = /([A-Za-z0-9_]+)\s+(?:DYNAMIC\s+ARRAY\s+OF\s+)?RECORD\b/i;
   const reRecordField = /^\s*([A-Za-z0-9_]+)\s+LIKE\s+([A-Za-z0-9_\.]+)/i;
   const reDefineStart = /^\s*DEFINE\b/i;
+  const reTypeStart = /^\s*TYPE\s+([A-Za-z0-9_]+)\s+(.+)/i;
   const reEndRecord = /^\s*END\s+RECORD\b/i;
   const reEndFunction = /^\s*END\s+FUNCTION\b/i;
   const reEndReport = /^\s*END\s+REPORT\b/i;
@@ -34,6 +35,96 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
     let line = lines[i];
     // skip full-line comments
     if (/^\s*#/.test(line)) continue;
+
+    // TYPE definition - handle both simple types and TYPE ... RECORD structures
+    const typeDef = line.match(reTypeStart);
+    if (typeDef) {
+      const typeName = typeDef[1];
+      const typeDefinition = typeDef[2].trim();
+      
+      console.log(`[DEBUG] Found TYPE definition: ${typeName} = '${typeDefinition}'`);
+      
+      // Check if this is a TYPE ... RECORD structure
+      if (/^RECORD\b/i.test(typeDefinition)) {
+        console.log(`[DEBUG] Processing TYPE RECORD: ${typeName}, starting from line ${i}`);
+        
+        // This is a TYPE name RECORD structure - collect until END RECORD
+        const blockStart = i;
+        const bodyLines: string[] = [];
+        let k = i + 1;
+        
+        while (k < lines.length && !reEndRecord.test(lines[k])) {
+          console.log(`[DEBUG] Line ${k}: '${lines[k]}'`);
+          // Remove comments (both # and --) from the line but preserve structure
+          const cleanLine = lines[k].replace(/#.*$/, '').replace(/--.*$/, '').trim();
+          console.log(`[DEBUG] Cleaned line ${k}: '${cleanLine}'`);
+          if (cleanLine && !cleanLine.match(/^\s*$/)) {
+            bodyLines.push(cleanLine);
+          }
+          k++;
+        }
+        
+        console.log(`[DEBUG] Found END RECORD at line ${k}: '${k < lines.length ? lines[k] : 'EOF'}'`);
+        console.log(`[DEBUG] Collected ${bodyLines.length} body lines:`, bodyLines);
+        
+        const blockEnd = k < lines.length ? k : i;
+        const r = new vscode.Range(blockStart, 0, blockEnd, Math.max(1, lines[blockEnd] ? lines[blockEnd].length : lines[i].length));
+        const recSym = new vscode.DocumentSymbol(typeName, 'TYPE RECORD', vscode.SymbolKind.Struct, r, r);
+        
+        // Parse fields in the RECORD body - more comprehensive pattern matching
+        for (const bodyLine of bodyLines) {
+          console.log(`[DEBUG] Processing body line: '${bodyLine}'`);
+          
+          // Enhanced field matching patterns
+          const patterns = [
+            // Pattern 1: fieldname LIKE table.field (with optional comma)
+            /^\s*([A-Za-z0-9_]+)\s+LIKE\s+([A-Za-z0-9_\.]+)\s*,?\s*$/i,
+            // Pattern 2: fieldname TYPE (with optional comma)
+            /^\s*([A-Za-z0-9_]+)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\s*,?\s*$/i,
+            // Pattern 3: fieldname CHAR(n), VARCHAR(n), DECIMAL(p,s) etc (with optional comma)
+            /^\s*([A-Za-z0-9_]+)\s+(CHAR|VARCHAR|DECIMAL)\s*\([^)]+\)\s*,?\s*$/i,
+            // Pattern 4: fieldname ARRAY [n] OF TYPE
+            /^\s*([A-Za-z0-9_]+)\s+ARRAY\s*\[\s*\d*\s*\]\s*OF\s+(\w+)\s*,?\s*$/i
+          ];
+          
+          let fieldFound = false;
+          for (let p = 0; p < patterns.length; p++) {
+            const fldMatch = bodyLine.match(patterns[p]);
+            if (fldMatch) {
+              const fieldName = fldMatch[1];
+              const fieldType = fldMatch[2];
+              console.log(`[DEBUG] Pattern ${p+1} matched - Found field: ${fieldName} : ${fieldType}`);
+              recSym.children.push(new vscode.DocumentSymbol(fieldName, fieldType, vscode.SymbolKind.Field, r, r));
+              fieldFound = true;
+              break;
+            }
+          }
+          
+          if (!fieldFound) {
+            console.log(`[DEBUG] No pattern matched for line: '${bodyLine}'`);
+          }
+        }
+        
+        console.log(`[DEBUG] Final TYPE RECORD: ${typeName} with ${recSym.children.length} fields`);
+        
+        if (currentFunction) currentFunction.children.push(recSym);
+        else if (inMain) mainGroup.children.push(recSym);
+        else moduleVarsGroup.children.push(recSym);
+        
+        // Skip to the END RECORD line
+        i = blockEnd;
+        continue;
+      } else {
+        // Simple TYPE definition (like TYPE t_cc ARRAY [] OF STRING)
+        const vr = new vscode.Range(i, 0, i, Math.max(1, line.length));
+        const vsym = new vscode.DocumentSymbol(typeName, typeDefinition, vscode.SymbolKind.TypeParameter, vr, vr);
+        console.log(`[DEBUG] Found TYPE definition: ${typeName} = ${typeDefinition}`);
+        if (currentFunction) currentFunction.children.push(vsym);
+        else if (inMain) mainGroup.children.push(vsym);
+        else moduleVarsGroup.children.push(vsym);
+        continue;
+      }
+    }
 
     // function
     const mFunc = line.match(reFunction);
@@ -77,7 +168,7 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
       while (j + 1 < lines.length) {
         const nxt = lines[j + 1];
         // stop if next line starts a new top-level construct or another DEFINE
-        if (/^\s*(?:FUNCTION|REPORT|MAIN|IMPORT|DATABASE|GLOBALS|DEFINE)\b/i.test(nxt)) break;
+        if (/^\s*(?:FUNCTION|REPORT|MAIN|IMPORT|DATABASE|GLOBALS|DEFINE|TYPE)\b/i.test(nxt)) break;
         // stop if next line obviously starts a normal statement rather than a DEFINE continuation
         if (reNonDefineStmt.test(nxt)) break;
         // allow record block lines or conservative DEFINE-like continuations; otherwise stop
@@ -103,8 +194,8 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
       while (k < cleanedLines.length) {
         const ln = cleanedLines[k].trim();
         if (!ln) { k++; continue; }
-        // support: 'DEFINE <name> RECORD' or '<name> RECORD'
-        const recStart = ln.match(/^(?:DEFINE\s+)?([A-Za-z0-9_]+)\s+RECORD\b/i);
+        // support: 'DEFINE <name> RECORD', '<name> RECORD', or 'DEFINE <name> DYNAMIC ARRAY OF RECORD'
+        const recStart = ln.match(/^(?:DEFINE\s+)?([A-Za-z0-9_]+)\s+(?:DYNAMIC\s+ARRAY\s+OF\s+)?RECORD\b/i);
         if (recStart) {
           const recName = recStart[1];
           // single-line: '... RECORD LIKE <table>.*' (no END RECORD block)
@@ -128,7 +219,9 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
         }
         // not a record start: split this line by commas and append parts
         // also strip any leading 'DEFINE ' token to avoid names like 'DEFINE l_var'
-        const segs = ln
+        // Remove both # and -- comments before processing
+        const cleanedLn = ln.replace(/#.*$/, '').replace(/--.*$/, '').trim();
+        const segs = cleanedLn
           .split(',')
           .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
           .filter(Boolean);
@@ -140,11 +233,21 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
       for (const rec of recordSegments) {
         const r = new vscode.Range(blockStart, 0, blockEnd, Math.max(1, lines[blockEnd].length));
   const recSym = new vscode.DocumentSymbol(rec.name, '', vscode.SymbolKind.Struct, r, r);
-        const fldRegex = /([A-Za-z0-9_]+)\s+LIKE\s+([A-Za-z0-9_\.]+)/ig;
-        let fm: RegExpExecArray | null;
-        while ((fm = fldRegex.exec(rec.body)) !== null) {
-          recSym.children.push(new vscode.DocumentSymbol(fm[1], '', vscode.SymbolKind.Field, r, r));
+        
+        // Improved field parsing - support both LIKE and direct types, and handle comments
+        const bodyLines = rec.body.split('\n');
+        for (const bodyLine of bodyLines) {
+          // Remove comments (both # and --)
+          const cleanLine = bodyLine.replace(/#.*$/, '').replace(/--.*$/, '').trim();
+          if (!cleanLine) continue;
+          
+          // Match field definitions: fieldname TYPE or fieldname LIKE table.field (with optional comma)
+          const fldMatch = cleanLine.match(/^\s*([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\s*,?\s*$/i);
+          if (fldMatch) {
+            recSym.children.push(new vscode.DocumentSymbol(fldMatch[1], fldMatch[2], vscode.SymbolKind.Field, r, r));
+          }
         }
+        
   if (currentFunction) currentFunction.children.push(recSym);
   else if (inMain) mainGroup.children.push(recSym);
   else moduleVarsGroup.children.push(recSym);
@@ -200,11 +303,18 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
       const recName = inlineRec[1];
       let k = i + 1;
       const rfields: string[] = [];
+      
       while (k < lines.length && !reEndRecord.test(lines[k])) {
-        const fm = lines[k].match(reRecordField);
-        if (fm) rfields.push(fm[1]);
+        // Remove comments (both # and --) from the line
+        const cleanLine = lines[k].replace(/#.*$/, '').replace(/--.*$/, '').trim();
+        if (cleanLine) {
+          // Match field definitions: fieldname TYPE or fieldname LIKE table.field (with optional comma)
+          const fm = cleanLine.match(/^\s*([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\s*,?\s*$/i);
+          if (fm) rfields.push(fm[1]);
+        }
         k++;
       }
+      
       const r = new vscode.Range(i, 0, k < lines.length ? k : i, Math.max(1, lines[k] ? lines[k].length : lines[i].length));
   const recSym = new vscode.DocumentSymbol(recName, '', vscode.SymbolKind.Struct, r, r);
       for (const fn of rfields) recSym.children.push(new vscode.DocumentSymbol(fn, '', vscode.SymbolKind.Field, r, r));
@@ -219,7 +329,8 @@ function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
     const singleDef = line.match(/^\s*DEFINE\s+(.+?)\s+(LIKE|STRING|INTEGER|DATE|CHAR|NUM|REAL|DECIMAL)\b/i);
     if (singleDef) {
       const left = singleDef[1].trim();
-      const names = left.split(',').map(s => s.replace(/#.*/,'').trim()).filter(Boolean);
+      // Remove both # and -- comments before processing
+      const names = left.split(',').map(s => s.replace(/#.*$/,'').replace(/--.*$/,'').trim()).filter(Boolean);
       for (const nm of names) {
         const vr = new vscode.Range(i, 0, i, Math.max(1, line.length));
         const vsym = new vscode.DocumentSymbol(nm, '', vscode.SymbolKind.Variable, vr, vr);

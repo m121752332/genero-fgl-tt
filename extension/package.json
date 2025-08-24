@@ -3,7 +3,7 @@
     "displayName": "Genero-FGL",
     "icon": "images/tiptop.ico",
     "description": "An essential tool designed to empower developers with a smooth and enjoyable experience when editing TIPTOP source code using Genero 4GL.",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "publisher": "m121752332",
     "repository": {
         "type": "git",
@@ -381,7 +381,7 @@
         "eslint": "^9.33.0",
         "@vscode/vsce": "^3.4.0",
         "package": "^1.0.1",
-        "typescript": "^4.8.4"
+        "typescript": "^5.9.2"
     },
     "dependencies": {
         "vscode-languageclient": "8.1.0",
