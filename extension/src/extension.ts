@@ -377,12 +377,12 @@ class FourGLDefinitionProvider implements vscode.DefinitionProvider {
       for (let i = 0; i < lines.length; i++) {
         if (reRepLine.test(lines[i])) {
           console.log(`[DEBUG] Found REPORT at line ${i + 1}: '${lines[i].trim()}'`);
-          vscode.window.showInformationMessage(`Found REPORT '${shortName}' at line ${i + 1}`);
+          //vscode.window.showInformationMessage(`Found REPORT '${shortName}' at line ${i + 1}`);
           return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
         }
       }
       console.log(`[DEBUG] REPORT '${shortName}' not found in current document`);
-      vscode.window.showWarningMessage(`REPORT '${shortName}' not found in current document`);
+      //vscode.window.showWarningMessage(`REPORT '${shortName}' not found in current document`);
     } else {
       // Search for FUNCTION definition
       const reFuncLine = new RegExp(`^\\s*(?:PUBLIC|PRIVATE|STATIC)?\\s*FUNCTION\\s+${shortName}\\b`, 'i');
@@ -390,7 +390,7 @@ class FourGLDefinitionProvider implements vscode.DefinitionProvider {
       for (let i = 0; i < lines.length; i++) {
         if (reFuncLine.test(lines[i])) {
           console.log(`[DEBUG] Found FUNCTION at line ${i + 1}: '${lines[i].trim()}'`);
-          vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' at line ${i + 1}`);
+          //vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' at line ${i + 1}`);
           return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
         }
       }
@@ -412,7 +412,6 @@ class FourGLDefinitionProvider implements vscode.DefinitionProvider {
           for (let i = 0; i < docLines.length; i++) {
             if (reRepLine.test(docLines[i])) {
               console.log(`[DEBUG] Found REPORT in ${f.fsPath} at line ${i + 1}`);
-              vscode.window.showInformationMessage(`Found REPORT '${shortName}' in ${f.fsPath} at line ${i + 1}`);
               return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
             }
           }
@@ -422,7 +421,6 @@ class FourGLDefinitionProvider implements vscode.DefinitionProvider {
           for (let i = 0; i < docLines.length; i++) {
             if (reFuncLine.test(docLines[i])) {
               console.log(`[DEBUG] Found FUNCTION in ${f.fsPath} at line ${i + 1}`);
-              vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' in ${f.fsPath} at line ${i + 1}`);
               return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
             }
           }
@@ -433,7 +431,7 @@ class FourGLDefinitionProvider implements vscode.DefinitionProvider {
     }
 
     console.log(`[DEBUG] No definition found for '${shortName}' (isReportCall: ${isReportCall})`);
-    vscode.window.showWarningMessage(`No definition found for '${shortName}'${isReportCall ? ' (REPORT)' : ' (FUNCTION)'}`);
+    //vscode.window.showWarningMessage(`No definition found for '${shortName}'${isReportCall ? ' (REPORT)' : ' (FUNCTION)'}`);
     return null;
   }
 }
@@ -514,10 +512,9 @@ export function activate(context: vscode.ExtensionContext) {
     if (activeEditor && activeEditor.document.languageId === '4gl') {
       console.log(`[Genero FGL] Manual diagnostic triggered for ${activeEditor.document.uri.fsPath}`);
       unusedVariableDiagnosticProvider.updateDiagnostics(activeEditor.document);
-      vscode.window.showInformationMessage('已运行未使用变量诊断');
     } else {
       console.log('[Genero FGL] No 4gl document active');
-      vscode.window.showWarningMessage('请打开一个 .4gl 文件');
+      vscode.window.showWarningMessage('請開啟 .4gl 文件');
     }
   });
   
@@ -794,7 +791,7 @@ function parseDefineStatements(blockContent: string, startLineOffset: number, sc
     const recordLikeMatch = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*\*?\s*(?:#.*)?$/i);
     if (recordLikeMatch) {
       const variableName = recordLikeMatch[1];
-      console.log(`[DEBUG] 解析到 RECORD LIKE 语句: ${variableName}`);
+      console.log(`[DEBUG] 解析到 RECORD LIKE 語句: ${variableName}`);
       
       variables.push({
         name: variableName,
@@ -812,11 +809,11 @@ function parseDefineStatements(blockContent: string, startLineOffset: number, sc
       const variableNames = singleDefineMatch[1].split(',').map(name => name.trim());
       const variableType = singleDefineMatch[2];
       
-      console.log(`[DEBUG] 解析到 DEFINE 语句: ${variableNames} : ${variableType}`);
+      console.log(`[DEBUG] 解析到 DEFINE 語句: ${variableNames} : ${variableType}`);
       
       variableNames.forEach(name => {
         if (name && !/^(DEFINE|END|RECORD)$/i.test(name)) {
-          console.log(`[DEBUG] 添加变量: ${name} (作用域: ${scope})`);
+          console.log(`[DEBUG] 增加參數: ${name} (作用區塊: ${scope})`);
           variables.push({
             name: name,
             type: variableType,
@@ -988,7 +985,7 @@ class UnusedVariableDiagnosticProvider {
         if (!isUsed) {
           const diagnostic = new vscode.Diagnostic(
             variable.range,
-            `未使用的变量 '${variable.name}'，建议移除该变量声明`,
+            `未使用該參數 '${variable.name}'，建議移除參數宣告`,
             vscode.DiagnosticSeverity.Warning
           );
           
@@ -1035,7 +1032,7 @@ class UnusedVariableDiagnosticProvider {
         if (!isUsed) {
           const diagnostic = new vscode.Diagnostic(
             variable.range,
-            `函数 '${funcBlock.name}' 中未使用的变量 '${variable.name}'，建议移除该变量声明`,
+            `FUNCTION '${funcBlock.name}' 中未使用的參數 '${variable.name}'，建議移除參數宣告!`,
             vscode.DiagnosticSeverity.Warning
           );
           
