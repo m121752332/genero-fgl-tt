@@ -23,12 +23,12 @@
 | | `{ ... }` | `comment.block.4gl` | 以 `{` 和 `}` 包圍的區塊註解。 |
 | **關鍵字** | `(AND|OR|MOD|NOT)` | `keyword.operator.4gl` | 運算子。 |
 | | `(BOOLEAN|BYTE|...)` | `storage.type.4gl` | 資料型別。 |
-| | `(ABSOLUTE|ACCEPT|...)` | `keyword.control.4gl` | 控制流程、命令等。 |
-| **字串** | `'...'(?!')` | `string.quoted.single.4gl` | 單引號包圍的字串。 |
-| | `"..."(?!")` | `string.quoted.double.4gl` | 雙引號包圍的字串。 |
+| | `(ABSOLUTE|ACCEPT...)` | `keyword.control.4gl` | 控制流程、命令等。 |
+| **字串** | `'...'` | `string.quoted.single.4gl` | 單引號包圍的字串。 |
+| | `"..."` | `string.quoted.double.4gl` | 雙引號包圍的字串。 |
 | | `` `...` `` | `string.quoted.raw.4gl` | 反引號包圍的字串。 |
 | **數字** | `...` | `constant.numeric.4gl` | 整數、浮點數、科學記號等數值。 |
-| **前置處理器** | `^\\s*&\\s*(elif|...)` | `meta.preprocessor` | 處理 `&define`、`&endif` 等語法。 |
+| **前置處理器** | `^\\s*&\\s*(elif\\|...)` | `meta.preprocessor` | 處理 `&define`、`&endif` 等語法。 |
 
 ---
 
@@ -105,24 +105,27 @@
 
 **ID:** `string.quoted.double.4gl`
 
-- **關鍵字:** 雙引號字串 `"..."`
-- **範例:** `"Hello World"`
+* **關鍵字:** 雙引號字串 `"..."`
+* **範例:** `"Hello World"`
 
 **ID:** `string.quoted.raw.4gl`
 
-- **關鍵字:** 反引號字串 `\`...\``
-- **範例:** `\`raw string\``
+* **關鍵字:** 反引號字串 `\`...\``
+* **範例:** `\`raw string\``
 
 ## 數值 (Numbers)
+
 **ID:** `constant.numeric.4gl`
-- **關鍵字:** 整數、浮點數、科學記號
-- **範例:** `123`, `45.67`, `1.23e-4`, `-987`
+
+* **關鍵字:** 整數、浮點數、科學記號
+* **範例:** `123`, `45.67`, `1.23e-4`, `-987`
 
 ## 字元跳脫 (Escape Characters)
 
 **ID:** `constant.character.escape.untitled`
-- **關鍵字:** 跳脫字元如 `\\`, `\"`, `\'`, `\n`, `\t` 等
-- **範例:** `'He said \"Hello\"'`
+
+* **關鍵字:** 跳脫字元如 `\\`, `\"`, `\'`, `\n`, `\t` 等
+* **範例:** `'He said \"Hello\"'`
 
 **ID:** `invalid.illegal`
 

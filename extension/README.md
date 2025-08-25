@@ -1,5 +1,7 @@
+
 # [English](/extension/README.md)｜[繁體中文](/extension/README_ZH.md)
-# Genero fglcomp/fglform command adapter
+
+## Genero fglcomp/fglform command adapter
 
 [![Marketplace Version](https://vsmarketplacebadges.dev/version-short/m121752332.genero-fgl.png)](https://marketplace.visualstudio.com/items?itemName=m121752332.genero-fgl)
 [![Downloads](https://vsmarketplacebadges.dev/downloads-short/m121752332.genero-fgl.png)](https://marketplace.visualstudio.com/items?itemName=m121752332.genero-fgl)
@@ -17,7 +19,7 @@
 * debugging
 * tasks
 
-## debugging
+## Debugging
 
 * launch using the internalConsole, integratedTerminal, externalTerminal.
 * attach to a fglrun process by picking an process id from a list.
@@ -72,36 +74,53 @@ Example 2: launch make
 }
 ```
 
-# Changes
-## 0.0.10
+## Changes
+
+### 0.0.10
+
 * contributes the problemMatcher fglcomp (See Building)
-## 0.0.12
+
+### 0.0.12
+
 * hover - context information for the symbol under the cursor.
 * Fixed syntax highlighting of multi-line string literals.
 * diagnostics: Better handling of fast user input on slow machines.
-## 0.0.13
+
+### 0.0.13
+
 * contributes tasks
 * breadcrumps
-## 0.0.14
+
+### 0.0.14
+
 * references
 * language server (experimental)
-## 0.0.15
+
+### 0.0.15
+
 * fixes: diagnostic not working on Windows.
+
 ## 0.0.16
+
 * fixes: Run/Run Without Debugging.
 * debugger: configuration option stopAtEntry (default true).
 
 ## 0.0.17
 
 * syntax highlighting - escape characters in strings
+
 ```4gl
 LET var = "abc\n"
 ```
+
 * syntax highlighting - preprocessor
+
 ```4gl
 & define FOO bar
 ```
+
 * syntax highlighting - scree/grid in per files
+
 ```per
 SCREEN
 {
@@ -109,11 +128,15 @@ SCREEN
   Field2 [f2  ]
 }
 ```
+
 ## 0.0.18
+
 * housekeeping
 
 ## 0.0.19
+
 * housekeeping: smaller package
 
 ## 0.0.20
+
 * fixes: debugger configuration attribute "stopAtEntry": true

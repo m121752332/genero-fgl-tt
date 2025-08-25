@@ -7,10 +7,12 @@
 ## 問題根因
 
 原有的 `parseDefineStatements` 函數只能處理：
+
 1. 單行 DEFINE 語句（如：`DEFINE var TYPE`）  
 2. 多行 RECORD 定義（如：`DEFINE var RECORD ... END RECORD`）
 
 但**無法處理**普通的多行 DEFINE 續行，例如：
+
 ```4gl
 DEFINE   la_act_type     DYNAMIC ARRAY OF STRING,
          lnode_root      om.DomNode,
@@ -72,6 +74,7 @@ const fglKeywords = /^(END|IF|THEN|ELSE|ELSEIF|FOR|WHILE|CASE|WHEN|RETURN|CALL|L
 ## 測試驗證
 
 ### 測試文件
+
 `unittests/test_unused_variables.4gl` 中的多行 DEFINE 語句：
 
 ```4gl
@@ -88,13 +91,17 @@ DEFINE   la_act_type     DYNAMIC ARRAY OF STRING,
 ```
 
 ### 使用位置
+
 `la_act_type` 變數在以下位置被使用：
+
 - 第 25-28 行：數組賦值 (`LET la_act_type[1] = "ActionDefault"`)
 - 第 30 行：FOR 迴圈條件 (`FOR li_i = 1 TO la_act_type.getLength()`)
 - 第 35 行：方法參數 (`lnode_root.selectByTagName(la_act_type[li_i])`)
 
 ### 預期結果
+
 修復後，`la_act_type` 變數應該：
+
 1. ✅ 被正確識別為 `DYNAMIC ARRAY OF STRING` 類型
 2. ✅ 被檢測為已使用的變數
 3. ✅ 不再顯示未使用變數的黃色警告
