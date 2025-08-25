@@ -11,12 +11,16 @@ yarn-error.log
 # Qoder
 .qoder/
 
+# kilocode
+.kilocode/
+
 # Packaging / build artifacts
 *.vsix
 .vscodeignore
 **/out/
 **/dist/
 **/build/
+tsconfig.tsbuildinfo
 
 # Logs
 logs/

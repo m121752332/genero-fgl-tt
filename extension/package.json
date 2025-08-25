@@ -3,7 +3,7 @@
     "displayName": "Genero-FGL",
     "icon": "images/tiptop.ico",
     "description": "An essential tool designed to empower developers with a smooth and enjoyable experience when editing TIPTOP source code using Genero 4GL.",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "publisher": "m121752332",
     "repository": {
         "type": "git",
@@ -362,15 +362,15 @@
         "tsc-build": "tsc --build",
         "lint": "eslint -c .eslintrc.json --ext .ts src",
         "package": "vsce package",
-            "vscode:prepublish": "echo prepublish skipped",
+        "publish": "vsce publish",
+        "vscode:prepublish": "npm run esbuild",
         "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
-            "esbuild": "npm run esbuild-base -- --sourcemap",
-            "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
-            "test-compile": "tsc -p ./"
-    ,
-    "build-and-package": "node ./scripts/build-and-package.js",
-    "install-vsix": "node ./scripts/install-vsix.js",
-    "build-install": "npm run build-and-package && npm run install-vsix"
+        "esbuild": "npm run esbuild-base -- --sourcemap",
+        "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+        "test-compile": "tsc -p ./",
+        "build-and-package": "node ./scripts/build-and-package.js",
+        "install-vsix": "node ./scripts/install-vsix.js",
+        "build-install": "npm run build-and-package && npm run install-vsix"
     },
     "devDependencies": {
         "@types/node": "*",
