@@ -16,7 +16,7 @@
         "Other","Education","Programming Languages","Themes","Formatters","Linters","Debuggers"
     ],
     "activationEvents": [
-        "onCommand:extension.pickFglrunProcess"
+        "onStartupFinished"
     ],
     "main": "./out/main.js",
     "contributes": {
@@ -125,8 +125,8 @@
                 "id": "4gl",
                 "aliases": ["Genero 4gl"],
                 "extensions": [
-                    "4gl",
-                    "4GL"
+                    ".4gl",
+                    ".4GL"
                 ],
                 "configuration": "./language-configuration.json"
             },
@@ -134,8 +134,8 @@
                 "id": "per",
                 "aliases": ["Genero per"],
                 "extensions": [
-                    "per",
-                    "PER"
+                    ".per",
+                    ".PER"
                 ],
                 "configuration": "./per-language-configuration.json"
             }
@@ -150,6 +150,13 @@
                 "language": "per",
                 "scopeName": "source.per",
                 "path": "./syntaxes/per.tmLanguage.json"
+            }
+        ],
+        "commands": [
+            {
+                "command": "genero-fgl.runDiagnostics",
+                "title": "運行未使用變數診斷",
+                "category": "Genero FGL"
             }
         ],
         "breakpoints": [

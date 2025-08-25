@@ -481,6 +481,7 @@ class FourGLDefinitionProvider {
 }
 let diagnosticTimeout;
 function activate(context) {
+    console.log('[Genero FGL] Extension activating...');
     // 注册文档符号提供器
     context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider({ language: '4gl' }, { provideDocumentSymbols(document) { return parseDocumentSymbols(document.getText()); } }));
     // 注册定义提供器
@@ -488,9 +489,12 @@ function activate(context) {
     // 注册未使用变量诊断提供器
     const unusedVariableDiagnosticProvider = new UnusedVariableDiagnosticProvider();
     context.subscriptions.push(unusedVariableDiagnosticProvider);
+    console.log('[Genero FGL] Diagnostic provider registered');
     // 文档变更监听
     const documentChangeListener = vscode.workspace.onDidChangeTextDocument(event => {
+        console.log(`[Genero FGL] Document change: ${event.document.uri.fsPath}, language: ${event.document.languageId}`);
         if (event.document.languageId === '4gl' && isDiagnosticEnabled()) {
+            console.log('[Genero FGL] Running diagnostics for change...');
             // 防抖处理
             clearTimeout(diagnosticTimeout);
             diagnosticTimeout = setTimeout(() => {
@@ -501,7 +505,9 @@ function activate(context) {
     context.subscriptions.push(documentChangeListener);
     // 文档打开监听
     const documentOpenListener = vscode.workspace.onDidOpenTextDocument(document => {
+        console.log(`[Genero FGL] Document opened: ${document.uri.fsPath}, language: ${document.languageId}`);
         if (document.languageId === '4gl' && isDiagnosticEnabled()) {
+            console.log('[Genero FGL] Running diagnostics for opened document...');
             unusedVariableDiagnosticProvider.updateDiagnostics(document);
         }
     });
@@ -509,6 +515,7 @@ function activate(context) {
     // 配置变更监听
     const configChangeListener = vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('GeneroFGL.4gl.diagnostic')) {
+            console.log('[Genero FGL] Configuration changed');
             vscode.workspace.textDocuments.forEach(document => {
                 if (document.languageId === '4gl') {
                     if (isDiagnosticEnabled()) {
@@ -523,11 +530,29 @@ function activate(context) {
     });
     context.subscriptions.push(configChangeListener);
     // 初始化时处理已打开的文档
+    console.log(`[Genero FGL] Processing ${vscode.workspace.textDocuments.length} open documents`);
     vscode.workspace.textDocuments.forEach(document => {
+        console.log(`[Genero FGL] Document: ${document.uri.fsPath}, language: ${document.languageId}`);
         if (document.languageId === '4gl' && isDiagnosticEnabled()) {
+            console.log('[Genero FGL] Running initial diagnostics...');
             unusedVariableDiagnosticProvider.updateDiagnostics(document);
         }
     });
+    // 添加手动触发诊断的命令
+    const manualDiagnosticCommand = vscode.commands.registerCommand('genero-fgl.runDiagnostics', () => {
+        const activeEditor = vscode.window.activeTextEditor;
+        if (activeEditor && activeEditor.document.languageId === '4gl') {
+            console.log(`[Genero FGL] Manual diagnostic triggered for ${activeEditor.document.uri.fsPath}`);
+            unusedVariableDiagnosticProvider.updateDiagnostics(activeEditor.document);
+            vscode.window.showInformationMessage('已运行未使用变量诊断');
+        }
+        else {
+            console.log('[Genero FGL] No 4gl document active');
+            vscode.window.showWarningMessage('请打开一个 .4gl 文件');
+        }
+    });
+    context.subscriptions.push(manualDiagnosticCommand);
+    console.log('[Genero FGL] Extension activation completed');
 }
 // 提取 MAIN 块内容
 function extractMainBlock(text) {
@@ -608,30 +633,35 @@ function parseFunctionSignature(functionContent) {
 function extractDefineParameters(functionContent, bracketParameters) {
     const lines = functionContent.split(/\r?\n/);
     const defineParameters = [];
-    console.log(`[DEBUG] extractDefineParameters: 括号参数`, bracketParameters);
     for (let i = 1; i < lines.length; i++) { // 跳过函数声明行
         const line = lines[i].trim();
         // 跳过注释和空行
         if (!line || line.startsWith('#') || line.startsWith('--'))
             continue;
-        // 修复：增强DEFINE语句匹配，支持更多类型格式
+        // 修复：增强DEFINE语句匹配，支持 RECORD LIKE 类型
+        // 先检查是否是 RECORD LIKE 的定义
+        const recordLikeMatch = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*\*?\s*$/i);
+        if (recordLikeMatch) {
+            const variableName = recordLikeMatch[1];
+            // 检查这个变量是否在括号参数中
+            if (bracketParameters.includes(variableName)) {
+                defineParameters.push(variableName);
+            }
+            continue;
+        }
+        // 普通的 DEFINE 语句匹配
         const defineMatch = line.match(/^\s*DEFINE\s+([^#\n]+?)\s+(?:LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|CHAR|DECIMAL|SMALLINT|BIGINT|DATE|DATETIME|VARCHAR|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
         if (defineMatch) {
             const variableList = defineMatch[1].trim();
-            console.log(`[DEBUG] 找到DEFINE行: '${line}', 变量列表: '${variableList}'`);
             const variables = variableList.split(',').map(v => v.trim()).filter(v => v.length > 0);
-            console.log(`[DEBUG] 解析变量: `, variables);
             // 检查这些变量是否在括号参数中
             variables.forEach(variable => {
-                console.log(`[DEBUG] 检查变量 '${variable}' 是否在括号参数中:`, bracketParameters.includes(variable));
                 if (bracketParameters.includes(variable)) {
                     defineParameters.push(variable);
-                    console.log(`[DEBUG] 添加DEFINE参数: ${variable}`);
                 }
             });
         }
     }
-    console.log(`[DEBUG] extractDefineParameters 结果:`, defineParameters);
     return defineParameters;
 }
 // 增强的函数签名解析器
@@ -645,23 +675,18 @@ function parseEnhancedFunctionSignature(functionContent) {
         functionMatch = firstLine.match(/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)/i);
     }
     if (!functionMatch) {
-        console.log(`[DEBUG] 无法解析函数声明: '${firstLine}'`);
         return null;
     }
     const functionName = functionMatch[1];
     const bracketParameterString = functionMatch[2].trim();
-    console.log(`[DEBUG] 解析函数: ${functionName}, 括号参数: '${bracketParameterString}'`);
     // 解析括号内参数
     const bracketParameters = bracketParameterString
         ? bracketParameterString.split(',').map(p => p.trim()).filter(p => p.length > 0)
         : [];
-    console.log(`[DEBUG] 函数 ${functionName} 括号参数:`, bracketParameters);
     // 解析函数体内的 DEFINE 参数
     const defineParameters = extractDefineParameters(functionContent, bracketParameters);
-    console.log(`[DEBUG] 函数 ${functionName} DEFINE参数:`, defineParameters);
     // 合并所有参数
     const allParameters = [...new Set([...bracketParameters, ...defineParameters])];
-    console.log(`[DEBUG] 函数 ${functionName} 所有参数:`, allParameters);
     return {
         name: functionName,
         bracketParameters,
@@ -711,12 +736,11 @@ function parseDefineStatements(blockContent, startLineOffset, scope) {
             continue;
         }
         // 单行 DEFINE 解析 - 修复：正确处理 RECORD LIKE 类型
-        // 先检查是否是 RECORD LIKE 的单行定义
-        const recordLikeMatch = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*\*?\s*$/i);
+        // 先检查是否是 RECORD LIKE 的单行定义（支持行尾注释）
+        const recordLikeMatch = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*\*?\s*(?:#.*)?$/i);
         if (recordLikeMatch) {
             const variableName = recordLikeMatch[1];
             console.log(`[DEBUG] 解析到 RECORD LIKE 语句: ${variableName}`);
-            
             variables.push({
                 name: variableName,
                 type: 'RECORD LIKE',
@@ -726,9 +750,8 @@ function parseDefineStatements(blockContent, startLineOffset, scope) {
             });
             continue;
         }
-        
-        // 普通的单行 DEFINE 解析
-        const singleDefineMatch = line.match(/^\s*DEFINE\s+(.+?)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+)\s*.*$/i);
+        // 普通的单行 DEFINE 解析（增强支持 DYNAMIC ARRAY OF 类型）
+        const singleDefineMatch = line.match(/^\s*DEFINE\s+(.+?)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+)\s*.*$/i);
         if (singleDefineMatch) {
             const variableNames = singleDefineMatch[1].split(',').map(name => name.trim());
             const variableType = singleDefineMatch[2];
@@ -745,6 +768,28 @@ function parseDefineStatements(blockContent, startLineOffset, scope) {
                     });
                 }
             });
+            continue;
+        }
+        // 多行 DEFINE 续行解析
+        // 匹配形如 "         lnode_root      om.DomNode," 的续行
+        // 排除 4GL 关键字以避免误识别
+        const defineContMatch = line.match(/^\s+([A-Za-z0-9_]+)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+|[A-Za-z0-9_\.]+)\s*,?\s*$/i);
+        if (defineContMatch) {
+            const variableName = defineContMatch[1];
+            const variableType = defineContMatch[2];
+            // 排除 4GL 关键字
+            const fglKeywords = /^(END|IF|THEN|ELSE|ELSEIF|FOR|WHILE|CASE|WHEN|RETURN|CALL|LET|DISPLAY|PRINT|MESSAGE|CONTINUE|EXIT|FUNCTION|MAIN|RECORD|TYPE|DEFINE|GLOBAL|GLOBALS|LIKE|TO|FROM|WHERE|SELECT|INSERT|UPDATE|DELETE|NULL|TRUE|FALSE)$/i;
+            if (!fglKeywords.test(variableName)) {
+                console.log(`[DEBUG] 解析到多行 DEFINE 续行: ${variableName} : ${variableType}`);
+                variables.push({
+                    name: variableName,
+                    type: variableType,
+                    line: actualLineNumber,
+                    range: new vscode.Range(actualLineNumber, 0, actualLineNumber, line.length),
+                    scope: scope
+                });
+            }
+            continue;
         }
         // 多行 DEFINE 解析 (RECORD 结构)
         if (/^\s*DEFINE\s+\w+\s+RECORD\s*$/i.test(line)) {
@@ -772,8 +817,8 @@ function isVariableUsedInLine(line, variableName) {
     const variableRegex = new RegExp(`\\b${escapeRegExp(variableName)}\\b`, 'i');
     // 检查各种使用模式
     const usagePatterns = [
-        // 赋值语句: LET variable = ...
-        new RegExp(`\\bLET\\s+${escapeRegExp(variableName)}\\s*[=\\[]`, 'i'),
+        // 赋值语句: LET variable = ... 或 LET variable.field = ...
+        new RegExp(`\\bLET\\s+${escapeRegExp(variableName)}(\\.\\w+)?\\s*[=\\[]`, 'i'),
         // 表达式中使用: ... = variable + ...
         new RegExp(`[=+\\-*/()\\s]${escapeRegExp(variableName)}[+\\-*/()\\s]`, 'i'),
         // 函数参数: CALL func(variable)
@@ -784,6 +829,12 @@ function isVariableUsedInLine(line, variableName) {
         new RegExp(`\\b(DISPLAY|PRINT|MESSAGE)\\s+[^\\n]*${escapeRegExp(variableName)}`, 'i'),
         // SQL INTO 子句: SELECT ... INTO variable.* 或 INTO variable
         new RegExp(`\\bINTO\\s+[^\\n]*${escapeRegExp(variableName)}(\\.\\*)?\\b`, 'i'),
+        // INITIALIZE 语句: INITIALIZE variable.* TO NULL
+        new RegExp(`\\bINITIALIZE\\s+${escapeRegExp(variableName)}(\\.\\*)?\\s+TO`, 'i'),
+        // INSERT INTO VALUES 语句: INSERT INTO table VALUES (variable.*)
+        new RegExp(`\\bINSERT\\s+INTO\\s+[^\\n]*VALUES\\s*\\([^)]*${escapeRegExp(variableName)}(\\.\\*)?[^)]*\\)`, 'i'),
+        // UPDATE SET 语句: UPDATE table SET field = variable
+        new RegExp(`\\bUPDATE\\s+[^\\n]*SET\\s+[^\\n]*${escapeRegExp(variableName)}`, 'i'),
         // 简单的变量引用
         new RegExp(`\\b${escapeRegExp(variableName)}\\b`, 'i')
     ];
@@ -828,21 +879,29 @@ class UnusedVariableDiagnosticProvider {
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('genero-fgl-unused-variables');
     }
     updateDiagnostics(document) {
+        console.log(`[Diagnostic] Called for ${document.uri.fsPath}`);
         // 检查配置是否启用
         const config = vscode.workspace.getConfiguration('GeneroFGL');
-        if (!config.get('4gl.diagnostic.enable', true)) {
+        const diagnosticEnabled = config.get('4gl.diagnostic.enable', true);
+        console.log(`[Diagnostic] Enabled: ${diagnosticEnabled}`);
+        if (!diagnosticEnabled) {
             this.diagnosticCollection.clear();
             return;
         }
         const text = document.getText();
         const diagnostics = [];
+        console.log(`[Diagnostic] Processing ${text.split('\n').length} lines`);
         // 处理 MAIN 块
         const mainBlock = extractMainBlock(text);
         if (mainBlock) {
+            console.log(`[Diagnostic] Found MAIN block`);
             const mainVariables = parseDefineStatements(mainBlock.content, mainBlock.startLine, 'main');
+            console.log(`[Diagnostic] MAIN variables: ${mainVariables.map(v => v.name)}`);
             const mainUsageMap = analyzeVariableUsage(mainBlock.content, mainVariables);
             mainVariables.forEach(variable => {
-                if (!mainUsageMap.get(variable.name)) {
+                const isUsed = mainUsageMap.get(variable.name);
+                console.log(`[Diagnostic] MAIN ${variable.name}: ${isUsed ? 'used' : 'unused'}`);
+                if (!isUsed) {
                     const diagnostic = new vscode.Diagnostic(variable.range, `未使用的变量 '${variable.name}'，建议移除该变量声明`, vscode.DiagnosticSeverity.Warning);
                     diagnostic.source = 'Genero FGL';
                     diagnostic.code = 'unused-variable';
@@ -851,23 +910,31 @@ class UnusedVariableDiagnosticProvider {
                 }
             });
         }
+        else {
+            console.log(`[Diagnostic] No MAIN block found`);
+        }
         // 处理 FUNCTION 块
         const functionBlocks = extractFunctionBlocks(text);
+        console.log(`[Diagnostic] Found ${functionBlocks.length} functions`);
         functionBlocks.forEach(funcBlock => {
+            console.log(`[Diagnostic] Processing function ${funcBlock.name}`);
             // 使用增强的函数签名解析器，获取所有参数列表
             const enhancedSignature = parseEnhancedFunctionSignature(funcBlock.content);
             const allParameters = enhancedSignature ? enhancedSignature.allParameters : [];
-            console.log(`[DEBUG] 函数 ${funcBlock.name} 的所有参数:`, allParameters);
+            console.log(`[Diagnostic] Function ${funcBlock.name} parameters: ${allParameters}`);
             // 解析函数中的所有变量定义
             const allFuncVariables = parseDefineStatements(funcBlock.content, funcBlock.startLine, 'function');
+            console.log(`[Diagnostic] Function ${funcBlock.name} all variables: ${allFuncVariables.map(v => v.name)}`);
             // 过滤掉所有参数变量（括号内参数和 DEFINE 语句参数），只检查局部变量
             const localVariables = allFuncVariables.filter(variable => !allParameters.includes(variable.name));
-            console.log(`[DEBUG] 函数 ${funcBlock.name} 的局部变量:`, localVariables.map(v => v.name));
+            console.log(`[Diagnostic] Function ${funcBlock.name} local variables: ${localVariables.map(v => v.name)}`);
             // 分析局部变量的使用情况
             const funcUsageMap = analyzeVariableUsage(funcBlock.content, localVariables);
             // 只为未使用的局部变量生成诊断信息
             localVariables.forEach(variable => {
-                if (!funcUsageMap.get(variable.name)) {
+                const isUsed = funcUsageMap.get(variable.name);
+                console.log(`[Diagnostic] Function ${funcBlock.name} variable ${variable.name}: ${isUsed ? 'used' : 'unused'}`);
+                if (!isUsed) {
                     const diagnostic = new vscode.Diagnostic(variable.range, `函数 '${funcBlock.name}' 中未使用的变量 '${variable.name}'，建议移除该变量声明`, vscode.DiagnosticSeverity.Warning);
                     diagnostic.source = 'Genero FGL';
                     diagnostic.code = 'unused-variable';
@@ -876,6 +943,7 @@ class UnusedVariableDiagnosticProvider {
                 }
             });
         });
+        console.log(`[Diagnostic] Generated ${diagnostics.length} diagnostics`);
         this.diagnosticCollection.set(document.uri, diagnostics);
     }
     clearDiagnostics(uri) {

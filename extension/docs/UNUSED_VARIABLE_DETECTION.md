@@ -23,12 +23,15 @@
 - 单行和多行 DEFINE 声明
 
 ### 变量使用检测模式
-- 赋值语句 (`LET variable = ...`)
+- 赋值语句 (`LET variable = ...` 或 `LET variable.field = ...`)
 - 表达式中使用 (`... = variable + ...`)
 - 函数参数 (`CALL func(variable)`)
 - 条件语句 (`IF variable THEN`)
 - 输出语句 (`DISPLAY variable`)
 - SQL INTO 子句 (`SELECT * INTO variable.*` 或 `FETCH cursor INTO variable`)
+- INITIALIZE 语句 (`INITIALIZE variable.* TO NULL`)
+- INSERT INTO VALUES 语句 (`INSERT INTO table VALUES (variable.*)`)
+- UPDATE SET 语句 (`UPDATE table SET field = variable.field`)
 
 ## 配置选项
 
