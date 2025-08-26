@@ -1,0 +1,235 @@
+export type SymbolKind = 'ModuleVariable' | 'Globals' | 'Main' | 'Function' | 'Record' | 'Variable' | 'Report';
+export interface Sym {
+  kind: SymbolKind;
+  name?: string;
+  detail?: string;
+  start: number;
+  end: number;
+  children?: Sym[];
+}
+
+function stripInlineComment(line: string) { if (!line) return ''; return line.replace(/#.*/g, '').replace(/--.*$/, ''); }
+
+function pushVar(parent: Sym, name: string, type: string, line: number) {
+  parent.children = parent.children || [];
+  parent.children.push({ kind: 'Variable', name, detail: type, start: line, end: line });
+}
+
+export function parseSymbols(text: string): Sym[] {
+  const lines = text.split(/\r?\n/);
+  const symbols: Sym[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const raw = lines[i]; const trimmed = raw.trim();
+    if (!trimmed) { i++; continue; }
+    // MODULE_VARIABLE
+    if (/^MODULE_VARIABLE\b/i.test(trimmed)) {
+      const start = i;
+      const node: Sym = { kind: 'ModuleVariable', name: 'MODULE_VARIABLE', start, end: start, children: [] };
+      i++;
+      while (i < lines.length && !/^END\s+MODULE_VARIABLE\b/i.test(lines[i].trim())) {
+        const ln = stripInlineComment(lines[i]).trim();
+        const m = ln.match(/^DEFINE\s+(.+?)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+        if (m) {
+          const names = m[1].split(',').map(s => s.trim()).filter(Boolean);
+          const typ = m[2] ? m[2].trim() : '';
+          names.forEach(n => pushVar(node, n, typ, i));
+        } else {
+          const cont = ln.match(/^([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+          if (cont) pushVar(node, cont[1], cont[2] || '', i);
+        }
+        i++;
+      }
+      node.end = Math.max(i, start);
+      symbols.push(node);
+      i++; continue;
+    }
+
+    // GLOBALS: if this is a single-line include (e.g. GLOBALS "path/to/file" or GLOBALS ../file or GLOBALS top.global)
+    // then treat it as an include and do not parse as a block. Otherwise parse a GLOBALS ... END GLOBALS block.
+    if (/^GLOBALS\b/i.test(trimmed) || /^#GLOBALS\b/i.test(trimmed)) {
+      // commented include (#GLOBALS) - skip
+      if (/^#GLOBALS\b/i.test(trimmed)) { i++; continue; }
+      // detect include form: followed by quoted path or path-like token containing '/' or a dot-extension
+      const includeLike = /^\s*GLOBALS\s+(['"]).+\1\s*$/i.test(trimmed)
+        || /^\s*GLOBALS\s+\S*\/\S+/i.test(trimmed)
+        || /^\s*GLOBALS\s+\S+\.[A-Za-z0-9_]+\s*$/i.test(trimmed);
+      if (includeLike) { i++; continue; }
+
+      const start = i;
+      const node: Sym = { kind: 'Globals', name: 'GLOBALS', start, end: start, children: [] };
+      i++;
+      while (i < lines.length && !/^END\s+GLOBALS\b/i.test(lines[i].trim())) {
+        const ln = stripInlineComment(lines[i]).trim();
+        const m = ln.match(/^DEFINE\s+(.+?)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+        if (m) {
+          const names = m[1].split(',').map(s => s.trim()).filter(Boolean);
+          const typ = m[2] ? m[2].trim() : '';
+          names.forEach(n => pushVar(node, n, typ, i));
+        } else {
+          const cont = ln.match(/^([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+          if (cont) pushVar(node, cont[1], cont[2] || '', i);
+        }
+        i++;
+      }
+      node.end = Math.max(i, start);
+      symbols.push(node);
+      i++; continue;
+    }
+
+    // Top-level DEFINE RECORD: handle block form 'DEFINE <name> RECORD' ... 'END RECORD'
+    if (/^\s*DEFINE\s+[A-Za-z0-9_]+\s+RECORD\b/i.test(trimmed)) {
+      const mrec = trimmed.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\b/i);
+      if (mrec) {
+        const rname = mrec[1];
+        const rstart = i;
+        const node: Sym = { kind: 'Record', name: rname, start: rstart, end: rstart, children: [] };
+        let k = i + 1;
+        while (k < lines.length && !/^\s*END\s+RECORD\b/i.test(lines[k].trim())) {
+          const ln = stripInlineComment(lines[k]).trim();
+          const fld = ln.match(/^([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+          if (fld) pushVar(node, fld[1], fld[2] || '', k);
+          k++;
+        }
+        node.end = Math.max(k, rstart);
+        symbols.push(node);
+        i = k + 1;
+        continue;
+      }
+    }
+
+    // Top-level DEFINE (not inside MAIN/FUNCTION/GLOBALS/MODULE_VARIABLE): treat as module variable(s)
+    if (/^DEFINE\b/i.test(trimmed)) {
+      // try to capture: DEFINE name1, name2 LIKE ... OR DEFINE name TYPE
+      const m = trimmed.match(/^DEFINE\s+(.+?)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+      if (m) {
+        const names = m[1].split(',').map(s => s.trim()).filter(Boolean);
+        const typ = m[2] ? m[2].trim() : '';
+        for (const n of names) pushVar({ children: symbols } as Sym, n, typ, i); // pushVar will create entries; we'll collect them at top-level
+        i++; continue;
+      }
+      // fallback: simple DEFINE <name> RECORD or other forms - skip here to avoid false positives
+    }
+
+    // MAIN
+    if (/^MAIN\b/i.test(trimmed)) {
+      const start = i;
+      const node: Sym = { kind: 'Main', name: 'MAIN', start, end: start, children: [] };
+      i++;
+      while (i < lines.length && !/^END\s+MAIN\b/i.test(lines[i].trim())) {
+        const lnRaw = lines[i];
+        const ln = stripInlineComment(lnRaw).trim();
+
+        // Handle nested DEFINE <name> RECORD ... END RECORD inside MAIN
+        const recDef = ln.match(/^DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\b/i);
+        if (recDef) {
+          const rname = recDef[1];
+          const rstart = i;
+          const recNode: Sym = { kind: 'Record', name: rname, start: rstart, end: rstart, children: [] };
+          let k = i + 1;
+          while (k < lines.length && !/^\s*END\s+RECORD\b/i.test(lines[k].trim())) {
+            const fldLn = stripInlineComment(lines[k]).trim();
+            const fld = fldLn.match(/^([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+            if (fld) pushVar(recNode, fld[1], fld[2] || '', k);
+            k++;
+          }
+          recNode.end = Math.max(k, rstart);
+          node.children = node.children || [];
+          node.children.push(recNode);
+          i = k + 1; // skip past END RECORD
+          continue;
+        }
+
+        const m = ln.match(/^DEFINE\s+(.+?)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+        if (m) {
+          const names = m[1].split(',').map(s => s.trim()).filter(Boolean);
+          const typ = m[2] ? m[2].trim() : '';
+          names.forEach(n => pushVar(node, n, typ, i));
+        } else {
+          const cont = ln.match(/^([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+          if (cont) pushVar(node, cont[1], cont[2] || '', i);
+        }
+        i++;
+      }
+      node.end = Math.max(i, start);
+      symbols.push(node);
+      i++; continue;
+    }
+
+    // FUNCTION / REPORT
+    const fm = trimmed.match(/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*(FUNCTION)\s+([A-Za-z0-9_]+)\b/i);
+    const rm = trimmed.match(/^\s*REPORT\s+([A-Za-z0-9_]+)\b/i);
+    if (fm) {
+      const name = fm[2]; const start = i;
+      const node: Sym = { kind: 'Function', name, start, end: start, children: [] };
+      i++;
+      while (i < lines.length && !/^END\s+FUNCTION\b/i.test(lines[i].trim())) {
+        const lnRaw = lines[i];
+        const ln = stripInlineComment(lnRaw).trim();
+
+        // Handle nested DEFINE <name> RECORD ... END RECORD inside FUNCTION
+        const recDef = ln.match(/^DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\b/i);
+        if (recDef) {
+          const rname = recDef[1];
+          const rstart = i;
+          const recNode: Sym = { kind: 'Record', name: rname, start: rstart, end: rstart, children: [] };
+          let k = i + 1;
+          while (k < lines.length && !/^\s*END\s+RECORD\b/i.test(lines[k].trim())) {
+            const fldLn = stripInlineComment(lines[k]).trim();
+            const fld = fldLn.match(/^([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+            if (fld) pushVar(recNode, fld[1], fld[2] || '', k);
+            k++;
+          }
+          recNode.end = Math.max(k, rstart);
+          node.children = node.children || [];
+          node.children.push(recNode);
+          i = k + 1; // skip past END RECORD
+          continue;
+        }
+
+        const m = ln.match(/^DEFINE\s+(.+?)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+        if (m) {
+          const names = m[1].split(',').map(s => s.trim()).filter(Boolean);
+          const typ = m[2] ? m[2].trim() : '';
+          names.forEach(n => pushVar(node, n, typ, i));
+        } else {
+          const cont = ln.match(/^([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+          if (cont) pushVar(node, cont[1], cont[2] || '', i);
+        }
+        i++;
+      }
+      node.end = Math.max(i, start);
+      symbols.push(node);
+      i++; continue;
+    }
+    if (rm) {
+      const name = rm[1]; const start = i;
+      const node: Sym = { kind: 'Report', name, start, end: start, children: [] };
+      i++;
+      while (i < lines.length && !/^END\s+REPORT\b/i.test(lines[i].trim())) { i++; }
+      node.end = Math.max(i, start);
+      symbols.push(node);
+      i++; continue;
+    }
+
+    // inline record or type declarations
+    const rec = trimmed.match(/([A-Za-z0-9_]+)\s+(?:DYNAMIC\s+ARRAY\s+OF\s+)?RECORD\b/i);
+    if (rec) {
+      const name = rec[1]; const start = i;
+      const node: Sym = { kind: 'Record', name, start, end: start, children: [] };
+      i++;
+      while (i < lines.length && !/^END\s+RECORD\b/i.test(lines[i].trim())) {
+        const fld = stripInlineComment(lines[i]).trim().match(/^([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR\([^)]*\)|DECIMAL\([^)]*\)|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+        if (fld) pushVar(node, fld[1], fld[2] || '', i);
+        i++;
+      }
+      node.end = Math.max(i, start);
+      symbols.push(node);
+      i++; continue;
+    }
+
+    i++;
+  }
+
+  return symbols;
+}

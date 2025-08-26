@@ -33,933 +33,507 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.parseDocumentSymbols = parseDocumentSymbols;
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-// Robust parser + symbol & definition providers for Genero 4GL
+const parser_1 = require("./parser");
+// --- Regex cache ----------------------------------------------------------
+const REGEX_PATTERNS = {
+    FUNCTION: /^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\b/i,
+    REPORT: /^\s*REPORT\s+([A-Za-z0-9_]+)\b/i,
+    MAIN_START: /^\s*MAIN\b/i,
+    END_FUNCTION: /^\s*END\s+FUNCTION\b/i,
+    END_REPORT: /^\s*END\s+REPORT\b/i,
+    END_MAIN: /^\s*END\s+MAIN\b/i,
+    END_RECORD: /^\s*END\s+RECORD\b/i,
+    GLOBALS_START: /^\s*GLOBALS\b/i,
+    END_GLOBALS: /^\s*END\s+GLOBALS\b/i,
+    DEFINE_START: /^\s*DEFINE\b/i,
+    TYPE_START: /^\s*TYPE\s+([A-Za-z0-9_]+)\s+(.+)/i,
+    RECORD_START: /([A-Za-z0-9_]+)\s+(?:DYNAMIC\s+ARRAY\s+OF\s+)?RECORD\b/i,
+    COMMENT_LINE: /^\s*#/,
+    DOUBLE_DASH_COMMENT: /^\s*--/,
+    FGL_KEYWORDS: /^(END|IF|THEN|ELSE|ELSEIF|FOR|WHILE|CASE|WHEN|RETURN|CALL|LET|DISPLAY|PRINT|MESSAGE|CONTINUE|EXIT|FUNCTION|MAIN|RECORD|TYPE|DEFINE|GLOBAL|GLOBALS|LIKE|TO|FROM|WHERE|SELECT|INSERT|UPDATE|DELETE|NULL|TRUE|FALSE)$/i
+};
+// remove inline single-line comments (# and --) before parsing
+function stripInlineComment(line) {
+    if (!line)
+        return line;
+    return line.replace(/#.*/g, '').replace(/--.*$/, '');
+}
+// --- Document symbol parser ----------------------------------------------
 function parseDocumentSymbols(text) {
     const lines = text.split(/\r?\n/);
-    const symbols = [];
-    // Outline groups: MAIN / FUNCTION / REPORT / MODULE_VARIABLE
+    const out = [];
+    // Outline groups used to preserve the extension's previous structure
     const mainGroup = new vscode.DocumentSymbol('MAIN', '', vscode.SymbolKind.Namespace, new vscode.Range(0, 0, Math.max(lines.length - 1, 0), 0), new vscode.Range(0, 0, 0, 0));
     const functionsGroup = new vscode.DocumentSymbol('FUNCTION', '', vscode.SymbolKind.Namespace, new vscode.Range(0, 0, Math.max(lines.length - 1, 0), 0), new vscode.Range(0, 0, 0, 0));
     const reportsGroup = new vscode.DocumentSymbol('REPORT', '', vscode.SymbolKind.Namespace, new vscode.Range(0, 0, Math.max(lines.length - 1, 0), 0), new vscode.Range(0, 0, 0, 0));
     const moduleVarsGroup = new vscode.DocumentSymbol('MODULE_VARIABLE', '', vscode.SymbolKind.Namespace, new vscode.Range(0, 0, Math.max(lines.length - 1, 0), 0), new vscode.Range(0, 0, 0, 0));
-    const reFunction = /^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\b/i;
-    const reReport = /^\s*REPORT\s+([A-Za-z0-9_]+)\b/i;
-    const reMainStart = /^\s*MAIN\b/i;
-    const reRecordStart = /([A-Za-z0-9_]+)\s+(?:DYNAMIC\s+ARRAY\s+OF\s+)?RECORD\b/i;
-    const reRecordField = /^\s*([A-Za-z0-9_]+)\s+LIKE\s+([A-Za-z0-9_\.]+)/i;
-    const reDefineStart = /^\s*DEFINE\b/i;
-    const reTypeStart = /^\s*TYPE\s+([A-Za-z0-9_]+)\s+(.+)/i;
-    const reEndRecord = /^\s*END\s+RECORD\b/i;
-    const reEndFunction = /^\s*END\s+FUNCTION\b/i;
-    const reEndReport = /^\s*END\s+REPORT\b/i;
-    const reEndMain = /^\s*END\s+MAIN\b/i;
-    // common statement starters that are NOT part of DEFINE continuation
-    const reNonDefineStmt = /^\s*(LET|MESSAGE|DISPLAY|PRINT|CALL|IF|ELSE|CASE|WHEN|FOR|FOREACH|WHILE|RETURN|OPEN|CLOSE|PREPARE|EXECUTE|SELECT|INSERT|UPDATE|DELETE|INITIALIZE|CONSTRUCT|INPUT|MENU|PROMPT|SLEEP|ERROR|WARN|INFO|OPTIONS|GLOBALS)\b/i;
-    // a conservative check for lines that look like a DEFINE continuation (names and optional type)
-    const reTypeWord = /(LIKE|STRING|INTEGER|DATE|CHAR|NUM|REAL|DECIMAL|FLOAT|SMALLINT|BIGINT|VARCHAR|NUMERIC|BOOLEAN)\b/i;
-    const reDefineContinuation = /^\s*(?:DEFINE\s+)?[A-Za-z0-9_,\s]+(?:\b(LIKE|STRING|INTEGER|DATE|CHAR|NUM|REAL|DECIMAL|FLOAT|SMALLINT|BIGINT|VARCHAR|NUMERIC|BOOLEAN)\b.*)?\s*,?\s*(?:#.*)?$/i;
-    let currentFunction = null;
-    let inMain = false;
-    for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
-        // skip full-line comments
-        if (/^\s*#/.test(line))
-            continue;
-        // TYPE definition - handle both simple types and TYPE ... RECORD structures
-        const typeDef = line.match(reTypeStart);
-        if (typeDef) {
-            const typeName = typeDef[1];
-            const typeDefinition = typeDef[2].trim();
-            console.log(`[DEBUG] Found TYPE definition: ${typeName} = '${typeDefinition}'`);
-            // Check if this is a TYPE ... RECORD structure
-            if (/^RECORD\b/i.test(typeDefinition)) {
-                console.log(`[DEBUG] Processing TYPE RECORD: ${typeName}, starting from line ${i}`);
-                // This is a TYPE name RECORD structure - collect until END RECORD
-                const blockStart = i;
-                const bodyLines = [];
-                let k = i + 1;
-                while (k < lines.length && !reEndRecord.test(lines[k])) {
-                    console.log(`[DEBUG] Line ${k}: '${lines[k]}'`);
-                    // Remove comments (both # and --) from the line but preserve structure
-                    const cleanLine = lines[k].replace(/#.*$/, '').replace(/--.*$/, '').trim();
-                    console.log(`[DEBUG] Cleaned line ${k}: '${cleanLine}'`);
-                    if (cleanLine && !cleanLine.match(/^\s*$/)) {
-                        bodyLines.push(cleanLine);
-                    }
-                    k++;
-                }
-                console.log(`[DEBUG] Found END RECORD at line ${k}: '${k < lines.length ? lines[k] : 'EOF'}'`);
-                console.log(`[DEBUG] Collected ${bodyLines.length} body lines:`, bodyLines);
-                const blockEnd = k < lines.length ? k : i;
-                const r = new vscode.Range(blockStart, 0, blockEnd, Math.max(1, lines[blockEnd] ? lines[blockEnd].length : lines[i].length));
-                const recSym = new vscode.DocumentSymbol(typeName, 'TYPE RECORD', vscode.SymbolKind.Struct, r, r);
-                // Parse fields in the RECORD body - more comprehensive pattern matching
-                for (const bodyLine of bodyLines) {
-                    console.log(`[DEBUG] Processing body line: '${bodyLine}'`);
-                    // Enhanced field matching patterns
-                    const patterns = [
-                        // Pattern 1: fieldname LIKE table.field (with optional comma)
-                        /^\s*([A-Za-z0-9_]+)\s+LIKE\s+([A-Za-z0-9_\.]+)\s*,?\s*$/i,
-                        // Pattern 2: fieldname TYPE (with optional comma)
-                        /^\s*([A-Za-z0-9_]+)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\s*,?\s*$/i,
-                        // Pattern 3: fieldname CHAR(n), VARCHAR(n), DECIMAL(p,s) etc (with optional comma)
-                        /^\s*([A-Za-z0-9_]+)\s+(CHAR|VARCHAR|DECIMAL)\s*\([^)]+\)\s*,?\s*$/i,
-                        // Pattern 4: fieldname ARRAY [n] OF TYPE
-                        /^\s*([A-Za-z0-9_]+)\s+ARRAY\s*\[\s*\d*\s*\]\s*OF\s+(\w+)\s*,?\s*$/i
-                    ];
-                    let fieldFound = false;
-                    for (let p = 0; p < patterns.length; p++) {
-                        const fldMatch = bodyLine.match(patterns[p]);
-                        if (fldMatch) {
-                            const fieldName = fldMatch[1];
-                            const fieldType = fldMatch[2];
-                            console.log(`[DEBUG] Pattern ${p + 1} matched - Found field: ${fieldName} : ${fieldType}`);
-                            recSym.children.push(new vscode.DocumentSymbol(fieldName, fieldType, vscode.SymbolKind.Field, r, r));
-                            fieldFound = true;
-                            break;
+    const globalVarsGroup = new vscode.DocumentSymbol('GLOBALS', '', vscode.SymbolKind.Namespace, new vscode.Range(0, 0, Math.max(lines.length - 1, 0), 0), new vscode.Range(0, 0, 0, 0));
+    function toRange(startLine, endLine) {
+        const s = Math.max(0, Math.min(lines.length - 1, startLine));
+        const e = Math.max(s, Math.min(lines.length - 1, endLine));
+        return new vscode.Range(s, 0, e, Math.max(1, lines[e] ? lines[e].length : 0));
+    }
+    function convert(sym) {
+        const name = sym.name || (sym.kind === 'ModuleVariable' ? 'MODULE_VARIABLE' : sym.kind.toUpperCase());
+        const detail = sym.detail || '';
+        const range = toRange(sym.start, sym.end);
+        const sel = new vscode.Range(sym.start, 0, sym.start, Math.max(1, lines[sym.start] ? lines[sym.start].length : 0));
+        let kind = vscode.SymbolKind.Variable;
+        switch (sym.kind) {
+            case 'ModuleVariable':
+                kind = vscode.SymbolKind.Namespace;
+                break;
+            case 'Globals':
+                kind = vscode.SymbolKind.Namespace;
+                break;
+            case 'Main':
+                kind = vscode.SymbolKind.Namespace;
+                break;
+            case 'Function':
+                kind = vscode.SymbolKind.Function;
+                break;
+            case 'Report':
+                kind = vscode.SymbolKind.Method;
+                break;
+            case 'Record':
+                kind = vscode.SymbolKind.Struct;
+                break;
+            case 'Variable':
+                kind = vscode.SymbolKind.Variable;
+                break;
+        }
+        const ds = new vscode.DocumentSymbol(name, detail, kind, range, sel);
+        if (sym.children && sym.children.length) {
+            for (const c of sym.children) {
+                const childSym = convert(c);
+                if (childSym)
+                    ds.children.push(childSym);
+            }
+        }
+        return ds;
+    }
+    try {
+        const syms = (0, parser_1.parseSymbols)(text);
+        for (const s of syms) {
+            switch (s.kind) {
+                case 'Main': {
+                    // add children of Main into mainGroup
+                    mainGroup.range = toRange(s.start, s.end);
+                    mainGroup.selectionRange = new vscode.Range(s.start, 0, s.start, Math.max(1, lines[s.start] ? lines[s.start].length : 0));
+                    if (s.children) {
+                        for (const c of s.children) {
+                            const cs = convert(c);
+                            if (cs)
+                                mainGroup.children.push(cs);
                         }
                     }
-                    if (!fieldFound) {
-                        console.log(`[DEBUG] No pattern matched for line: '${bodyLine}'`);
-                    }
-                }
-                console.log(`[DEBUG] Final TYPE RECORD: ${typeName} with ${recSym.children.length} fields`);
-                if (currentFunction)
-                    currentFunction.children.push(recSym);
-                else if (inMain)
-                    mainGroup.children.push(recSym);
-                else
-                    moduleVarsGroup.children.push(recSym);
-                // Skip to the END RECORD line
-                i = blockEnd;
-                continue;
-            }
-            else {
-                // Simple TYPE definition (like TYPE t_cc ARRAY [] OF STRING)
-                const vr = new vscode.Range(i, 0, i, Math.max(1, line.length));
-                const vsym = new vscode.DocumentSymbol(typeName, typeDefinition, vscode.SymbolKind.TypeParameter, vr, vr);
-                console.log(`[DEBUG] Found TYPE definition: ${typeName} = ${typeDefinition}`);
-                if (currentFunction)
-                    currentFunction.children.push(vsym);
-                else if (inMain)
-                    mainGroup.children.push(vsym);
-                else
-                    moduleVarsGroup.children.push(vsym);
-                continue;
-            }
-        }
-        // function
-        const mFunc = line.match(reFunction);
-        if (mFunc) {
-            const name = mFunc[1];
-            const r = new vscode.Range(i, 0, i, Math.max(1, line.length));
-            const sym = new vscode.DocumentSymbol(name, '', vscode.SymbolKind.Function, r, r);
-            functionsGroup.children.push(sym);
-            currentFunction = sym;
-            continue;
-        }
-        // report
-        const mRep = line.match(reReport);
-        if (mRep) {
-            const name = mRep[1];
-            const r = new vscode.Range(i, 0, i, Math.max(1, line.length));
-            const sym = new vscode.DocumentSymbol(name, '', vscode.SymbolKind.Method, r, r);
-            reportsGroup.children.push(sym);
-            currentFunction = sym;
-            continue;
-        }
-        // MAIN block start
-        if (reMainStart.test(line)) {
-            inMain = true;
-            // no separate MAIN node; variables will be nested directly under MAIN group
-            continue;
-        }
-        // end markers: only reset on END FUNCTION / END REPORT / END MAIN (avoid generic END)
-        if (reEndFunction.test(line)) {
-            currentFunction = null;
-            continue;
-        }
-        if (reEndReport.test(line)) {
-            currentFunction = null;
-            continue;
-        }
-        if (reEndMain.test(line)) {
-            inMain = false;
-            continue;
-        }
-        // DEFINE block handling (tightened): treat RECORD blocks atomically and collect only proper DEFINE continuation lines
-        if (reDefineStart.test(line)) {
-            // collect contiguous lines that belong to this DEFINE (lines until next top-level token)
-            const blockLines = [line];
-            let j = i;
-            while (j + 1 < lines.length) {
-                const nxt = lines[j + 1];
-                // stop if next line starts a new top-level construct or another DEFINE
-                if (/^\s*(?:FUNCTION|REPORT|MAIN|IMPORT|DATABASE|GLOBALS|DEFINE|TYPE)\b/i.test(nxt))
                     break;
-                // stop if next line obviously starts a normal statement rather than a DEFINE continuation
-                if (reNonDefineStmt.test(nxt))
+                }
+                case 'Function': {
+                    const fsym = convert(s);
+                    if (fsym)
+                        functionsGroup.children.push(fsym);
                     break;
-                // allow record block lines or conservative DEFINE-like continuations; otherwise stop
-                const isRecordLine = /\bRECORD\b/i.test(nxt) || /^\s*END\s+RECORD\b/i.test(nxt);
-                if (!isRecordLine && !reDefineContinuation.test(nxt.trim()))
+                }
+                case 'Report': {
+                    const rsym = convert(s);
+                    if (rsym)
+                        reportsGroup.children.push(rsym);
                     break;
-                // include continuation line
-                j++;
-                blockLines.push(nxt);
-            }
-            const blockStart = i;
-            const blockEnd = j;
-            i = j;
-            // remove inline comments but keep commas and newlines for parsing; skip pure comment lines
-            const cleanedLines = blockLines
-                .map(l => l.replace(/#.*/g, ''))
-                .filter(l => l.trim().length > 0);
-            // parse block lines into segments: either record blocks or normal fragments
-            const normalParts = [];
-            const recordSegments = [];
-            let k = 0;
-            while (k < cleanedLines.length) {
-                const ln = cleanedLines[k].trim();
-                if (!ln) {
-                    k++;
-                    continue;
                 }
-                // support: 'DEFINE <name> RECORD', '<name> RECORD', or 'DEFINE <name> DYNAMIC ARRAY OF RECORD'
-                const recStart = ln.match(/^(?:DEFINE\s+)?([A-Za-z0-9_]+)\s+(?:DYNAMIC\s+ARRAY\s+OF\s+)?RECORD\b/i);
-                if (recStart) {
-                    const recName = recStart[1];
-                    // single-line: '... RECORD LIKE <table>.*' (no END RECORD block)
-                    if (/\bLIKE\b/i.test(ln)) {
-                        recordSegments.push({ name: recName, body: '' });
-                        k++;
-                        continue;
-                    }
-                    // block form: collect until END RECORD (allow trailing spaces/commas)
-                    let bodyLines = [];
-                    k++;
-                    while (k < cleanedLines.length && !/^\s*END\s+RECORD\b/i.test(cleanedLines[k])) {
-                        bodyLines.push(cleanedLines[k]);
-                        k++;
-                    }
-                    if (k < cleanedLines.length && /^\s*END\s+RECORD\b/i.test(cleanedLines[k])) {
-                        k++;
-                    }
-                    recordSegments.push({ name: recName, body: bodyLines.join('\n') });
-                    continue;
-                }
-                // not a record start: split this line by commas and append parts
-                // also strip any leading 'DEFINE ' token to avoid names like 'DEFINE l_var'
-                // Remove both # and -- comments before processing
-                const cleanedLn = ln.replace(/#.*$/, '').replace(/--.*$/, '').trim();
-                const segs = cleanedLn
-                    .split(',')
-                    .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
-                    .filter(Boolean);
-                normalParts.push(...segs);
-                k++;
-            }
-            // emit record symbols first
-            for (const rec of recordSegments) {
-                const r = new vscode.Range(blockStart, 0, blockEnd, Math.max(1, lines[blockEnd].length));
-                const recSym = new vscode.DocumentSymbol(rec.name, '', vscode.SymbolKind.Struct, r, r);
-                // Improved field parsing - support both LIKE and direct types, and handle comments
-                const bodyLines = rec.body.split('\n');
-                for (const bodyLine of bodyLines) {
-                    // Remove comments (both # and --)
-                    const cleanLine = bodyLine.replace(/#.*$/, '').replace(/--.*$/, '').trim();
-                    if (!cleanLine)
-                        continue;
-                    // Match field definitions: fieldname TYPE or fieldname LIKE table.field (with optional comma)
-                    const fldMatch = cleanLine.match(/^\s*([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\s*,?\s*$/i);
-                    if (fldMatch) {
-                        recSym.children.push(new vscode.DocumentSymbol(fldMatch[1], fldMatch[2], vscode.SymbolKind.Field, r, r));
-                    }
-                }
-                if (currentFunction)
-                    currentFunction.children.push(recSym);
-                else if (inMain)
-                    mainGroup.children.push(recSym);
-                else
-                    moduleVarsGroup.children.push(recSym);
-            }
-            // process normalParts: merge into a single string and apply name/type extraction
-            const afterDefine = normalParts.join(', ');
-            if (afterDefine) {
-                const parts = afterDefine.split(',').map(p => p.trim()).filter(Boolean);
-                let pending = [];
-                let sawType = false;
-                for (const part of parts) {
-                    // skip pure keywords that shouldn't be treated as names
-                    if (/^(DEFINE|END|RECORD)$/i.test(part))
-                        continue;
-                    const mt = part.match(reTypeWord);
-                    if (mt) {
-                        const idx = part.search(new RegExp(`\\b${mt[1]}\\b`, 'i'));
-                        const namesStr = idx >= 0 ? part.substring(0, idx) : part;
-                        const names = namesStr
-                            .split(',')
-                            .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
-                            .filter(Boolean)
-                            .filter(n => !/^(DEFINE|END|RECORD)$/i.test(n));
-                        const all = pending.concat(names);
-                        for (const nm of all) {
-                            if (!nm)
-                                continue;
-                            const vr = new vscode.Range(blockStart, 0, blockEnd, Math.max(1, lines[blockEnd].length));
-                            const vsym = new vscode.DocumentSymbol(nm, '', vscode.SymbolKind.Variable, vr, vr);
-                            if (currentFunction)
-                                currentFunction.children.push(vsym);
-                            else if (inMain)
-                                mainGroup.children.push(vsym);
-                            else
-                                moduleVarsGroup.children.push(vsym);
+                case 'ModuleVariable': {
+                    if (s.children) {
+                        for (const c of s.children) {
+                            const cs = convert(c);
+                            if (cs)
+                                moduleVarsGroup.children.push(cs);
                         }
-                        pending = [];
-                        sawType = true;
                     }
-                    else {
-                        const names = part
-                            .split(',')
-                            .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
-                            .filter(Boolean)
-                            .filter(n => !/^(DEFINE|END|RECORD)$/i.test(n));
-                        pending.push(...names);
+                    break;
+                }
+                case 'Globals': {
+                    if (s.children) {
+                        for (const c of s.children) {
+                            const cs = convert(c);
+                            if (cs)
+                                globalVarsGroup.children.push(cs);
+                        }
                     }
+                    break;
                 }
-                // don't emit dangling names without a detected type to avoid false positives
-            }
-            continue;
-        }
-        // inline RECORD without DEFINE
-        const inlineRec = line.match(reRecordStart);
-        if (inlineRec) {
-            const recName = inlineRec[1];
-            let k = i + 1;
-            const rfields = [];
-            while (k < lines.length && !reEndRecord.test(lines[k])) {
-                // Remove comments (both # and --) from the line
-                const cleanLine = lines[k].replace(/#.*$/, '').replace(/--.*$/, '').trim();
-                if (cleanLine) {
-                    // Match field definitions: fieldname TYPE or fieldname LIKE table.field (with optional comma)
-                    const fm = cleanLine.match(/^\s*([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\s*,?\s*$/i);
-                    if (fm)
-                        rfields.push(fm[1]);
+                case 'Record': {
+                    const rs = convert(s);
+                    if (rs)
+                        moduleVarsGroup.children.push(rs);
+                    break;
                 }
-                k++;
+                case 'Variable': {
+                    // top-level variable outside main/function -> module variable area
+                    const vsym = convert(s);
+                    if (vsym)
+                        moduleVarsGroup.children.push(vsym);
+                    break;
+                }
+                default: {
+                    const anySym = convert(s);
+                    if (anySym)
+                        out.push(anySym);
+                    break;
+                }
             }
-            const r = new vscode.Range(i, 0, k < lines.length ? k : i, Math.max(1, lines[k] ? lines[k].length : lines[i].length));
-            const recSym = new vscode.DocumentSymbol(recName, '', vscode.SymbolKind.Struct, r, r);
-            for (const fn of rfields)
-                recSym.children.push(new vscode.DocumentSymbol(fn, '', vscode.SymbolKind.Field, r, r));
-            if (currentFunction)
-                currentFunction.children.push(recSym);
-            else if (inMain)
-                mainGroup.children.push(recSym);
-            else
-                moduleVarsGroup.children.push(recSym);
-            if (k < lines.length)
-                i = k;
-            continue;
-        }
-        // single-line DEFINE like 'DEFINE l_msg STRING'
-        const singleDef = line.match(/^\s*DEFINE\s+(.+?)\s+(LIKE|STRING|INTEGER|DATE|CHAR|NUM|REAL|DECIMAL)\b/i);
-        if (singleDef) {
-            const left = singleDef[1].trim();
-            // Remove both # and -- comments before processing
-            const names = left.split(',').map(s => s.replace(/#.*$/, '').replace(/--.*$/, '').trim()).filter(Boolean);
-            for (const nm of names) {
-                const vr = new vscode.Range(i, 0, i, Math.max(1, line.length));
-                const vsym = new vscode.DocumentSymbol(nm, '', vscode.SymbolKind.Variable, vr, vr);
-                if (currentFunction)
-                    currentFunction.children.push(vsym);
-                else if (inMain)
-                    mainGroup.children.push(vsym);
-                else
-                    moduleVarsGroup.children.push(vsym);
-            }
-            continue;
         }
     }
-    // order: MAIN, FUNCTION, REPORT, MODULE_VARIABLE
+    catch (err) {
+        console.error('[Genero FGL] parseDocumentSymbols error', err);
+    }
+    // push groups in expected order if they have children
     if (mainGroup.children.length)
-        symbols.push(mainGroup);
+        out.push(mainGroup);
     if (functionsGroup.children.length)
-        symbols.push(functionsGroup);
+        out.push(functionsGroup);
     if (reportsGroup.children.length)
-        symbols.push(reportsGroup);
+        out.push(reportsGroup);
     if (moduleVarsGroup.children.length)
-        symbols.push(moduleVarsGroup);
-    return symbols;
+        out.push(moduleVarsGroup);
+    if (globalVarsGroup.children.length)
+        out.push(globalVarsGroup);
+    return out;
 }
-// Definition provider
-class FourGLDefinitionProvider {
-    async provideDefinition(document, position) {
-        const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z0-9_.]+/);
-        if (!wordRange)
-            return null;
-        const word = document.getText(wordRange);
-        const shortName = word.includes('.') ? word.split('.').pop() || word : word;
-        // Get the line containing the word to determine if it's a report or function call
-        const line = document.lineAt(position.line).text;
-        const isReportCall = /\b(START\s+REPORT|OUTPUT\s+TO\s+REPORT|FINISH\s+REPORT)\b/i.test(line);
-        // Debug information
-        const debugInfo = `Word: '${word}', Line: '${line.trim()}', IsReportCall: ${isReportCall}`;
-        console.log(`[DEBUG] ${debugInfo}`);
-        // search in current document
-        const lines = document.getText().split(/\r?\n/);
-        if (isReportCall) {
-            // Search for REPORT definition
-            const reRepLine = new RegExp(`^\\s*REPORT\\s+${shortName}\\b`, 'i');
-            console.log(`[DEBUG] Searching for REPORT pattern: ${reRepLine.source}`);
-            for (let i = 0; i < lines.length; i++) {
-                if (reRepLine.test(lines[i])) {
-                    console.log(`[DEBUG] Found REPORT at line ${i + 1}: '${lines[i].trim()}'`);
-                    vscode.window.showInformationMessage(`Found REPORT '${shortName}' at line ${i + 1}`);
-                    return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
-                }
-            }
-            console.log(`[DEBUG] REPORT '${shortName}' not found in current document`);
-            vscode.window.showWarningMessage(`REPORT '${shortName}' not found in current document`);
-        }
-        else {
-            // Search for FUNCTION definition
-            const reFuncLine = new RegExp(`^\\s*(?:PUBLIC|PRIVATE|STATIC)?\\s*FUNCTION\\s+${shortName}\\b`, 'i');
-            console.log(`[DEBUG] Searching for FUNCTION pattern: ${reFuncLine.source}`);
-            for (let i = 0; i < lines.length; i++) {
-                if (reFuncLine.test(lines[i])) {
-                    console.log(`[DEBUG] Found FUNCTION at line ${i + 1}: '${lines[i].trim()}'`);
-                    vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' at line ${i + 1}`);
-                    return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
-                }
-            }
-            console.log(`[DEBUG] FUNCTION '${shortName}' not found in current document`);
-        }
-        // search other workspace files
-        const files = await vscode.workspace.findFiles('**/*.{4gl,4GL}', '**/node_modules/**', 500);
-        console.log(`[DEBUG] Searching in ${files.length} workspace files`);
-        for (const f of files) {
-            if (f.toString() === document.uri.toString())
-                continue;
-            try {
-                const doc = await vscode.workspace.openTextDocument(f);
-                const docLines = doc.getText().split(/\r?\n/);
-                if (isReportCall) {
-                    // Search for REPORT definition in other files
-                    const reRepLine = new RegExp(`^\\s*REPORT\\s+${shortName}\\b`, 'i');
-                    for (let i = 0; i < docLines.length; i++) {
-                        if (reRepLine.test(docLines[i])) {
-                            console.log(`[DEBUG] Found REPORT in ${f.fsPath} at line ${i + 1}`);
-                            vscode.window.showInformationMessage(`Found REPORT '${shortName}' in ${f.fsPath} at line ${i + 1}`);
-                            return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
-                        }
-                    }
-                }
-                else {
-                    // Search for FUNCTION definition in other files
-                    const reFuncLine = new RegExp(`^\\s*(?:PUBLIC|PRIVATE|STATIC)?\\s*FUNCTION\\s+${shortName}\\b`, 'i');
-                    for (let i = 0; i < docLines.length; i++) {
-                        if (reFuncLine.test(docLines[i])) {
-                            console.log(`[DEBUG] Found FUNCTION in ${f.fsPath} at line ${i + 1}`);
-                            vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' in ${f.fsPath} at line ${i + 1}`);
-                            return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
-                        }
-                    }
-                }
-            }
-            catch {
-                // ignore
-            }
-        }
-        console.log(`[DEBUG] No definition found for '${shortName}' (isReportCall: ${isReportCall})`);
-        vscode.window.showWarningMessage(`No definition found for '${shortName}'${isReportCall ? ' (REPORT)' : ' (FUNCTION)'}`);
-        return null;
-    }
-}
-let diagnosticTimeout;
-function activate(context) {
-    console.log('[Genero FGL] Extension activating...');
-    // 注册文档符号提供器
-    context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider({ language: '4gl' }, { provideDocumentSymbols(document) { return parseDocumentSymbols(document.getText()); } }));
-    // 注册定义提供器
-    context.subscriptions.push(vscode.languages.registerDefinitionProvider({ language: '4gl' }, new FourGLDefinitionProvider()));
-    // 注册未使用变量诊断提供器
-    const unusedVariableDiagnosticProvider = new UnusedVariableDiagnosticProvider();
-    context.subscriptions.push(unusedVariableDiagnosticProvider);
-    console.log('[Genero FGL] Diagnostic provider registered');
-    // 文档变更监听
-    const documentChangeListener = vscode.workspace.onDidChangeTextDocument(event => {
-        console.log(`[Genero FGL] Document change: ${event.document.uri.fsPath}, language: ${event.document.languageId}`);
-        if (event.document.languageId === '4gl' && isDiagnosticEnabled()) {
-            console.log('[Genero FGL] Running diagnostics for change...');
-            // 防抖处理
-            clearTimeout(diagnosticTimeout);
-            diagnosticTimeout = setTimeout(() => {
-                unusedVariableDiagnosticProvider.updateDiagnostics(event.document);
-            }, getDiagnosticDelay());
-        }
-    });
-    context.subscriptions.push(documentChangeListener);
-    // 文档打开监听
-    const documentOpenListener = vscode.workspace.onDidOpenTextDocument(document => {
-        console.log(`[Genero FGL] Document opened: ${document.uri.fsPath}, language: ${document.languageId}`);
-        if (document.languageId === '4gl' && isDiagnosticEnabled()) {
-            console.log('[Genero FGL] Running diagnostics for opened document...');
-            unusedVariableDiagnosticProvider.updateDiagnostics(document);
-        }
-    });
-    context.subscriptions.push(documentOpenListener);
-    // 配置变更监听
-    const configChangeListener = vscode.workspace.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('GeneroFGL.4gl.diagnostic')) {
-            console.log('[Genero FGL] Configuration changed');
-            vscode.workspace.textDocuments.forEach(document => {
-                if (document.languageId === '4gl') {
-                    if (isDiagnosticEnabled()) {
-                        unusedVariableDiagnosticProvider.updateDiagnostics(document);
-                    }
-                    else {
-                        unusedVariableDiagnosticProvider.clearDiagnostics(document.uri);
-                    }
-                }
-            });
-        }
-    });
-    context.subscriptions.push(configChangeListener);
-    // 初始化时处理已打开的文档
-    console.log(`[Genero FGL] Processing ${vscode.workspace.textDocuments.length} open documents`);
-    vscode.workspace.textDocuments.forEach(document => {
-        console.log(`[Genero FGL] Document: ${document.uri.fsPath}, language: ${document.languageId}`);
-        if (document.languageId === '4gl' && isDiagnosticEnabled()) {
-            console.log('[Genero FGL] Running initial diagnostics...');
-            unusedVariableDiagnosticProvider.updateDiagnostics(document);
-        }
-    });
-    // 添加手动触发诊断的命令
-    const manualDiagnosticCommand = vscode.commands.registerCommand('genero-fgl.runDiagnostics', () => {
-        const activeEditor = vscode.window.activeTextEditor;
-        if (activeEditor && activeEditor.document.languageId === '4gl') {
-            console.log(`[Genero FGL] Manual diagnostic triggered for ${activeEditor.document.uri.fsPath}`);
-            unusedVariableDiagnosticProvider.updateDiagnostics(activeEditor.document);
-            vscode.window.showInformationMessage('已运行未使用变量诊断');
-        }
-        else {
-            console.log('[Genero FGL] No 4gl document active');
-            vscode.window.showWarningMessage('请打开一个 .4gl 文件');
-        }
-    });
-    context.subscriptions.push(manualDiagnosticCommand);
-    console.log('[Genero FGL] Extension activation completed');
-}
-// 提取 MAIN 块内容
+// --- extract MAIN block; tolerate missing END MAIN by falling back to EOF ---
 function extractMainBlock(text) {
     const lines = text.split(/\r?\n/);
     let mainStart = -1;
     let mainEnd = -1;
     for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        // 检测 MAIN 开始
-        if (/^\s*MAIN\s*$/i.test(line)) {
+        const l = lines[i].trim();
+        if (/^\s*MAIN\b/i.test(l)) {
             mainStart = i;
         }
-        // 检测 END MAIN
-        if (/^\s*END\s+MAIN\s*$/i.test(line) && mainStart !== -1) {
+        if (/^\s*END\s+MAIN\b/i.test(l) && mainStart !== -1) {
             mainEnd = i;
             break;
         }
     }
-    if (mainStart === -1 || mainEnd === -1) {
+    if (mainStart === -1)
         return null;
-    }
-    return {
-        content: lines.slice(mainStart, mainEnd + 1).join('\n'),
-        startLine: mainStart,
-        endLine: mainEnd
-    };
+    if (mainEnd === -1)
+        mainEnd = lines.length - 1; // EOF fallback
+    return { content: lines.slice(mainStart, mainEnd + 1).join('\n'), startLine: mainStart, endLine: mainEnd };
 }
-// 提取 FUNCTION 块内容
+// --- Function block extraction and signature helpers ---------------------
 function extractFunctionBlocks(text) {
     const lines = text.split(/\r?\n/);
-    const functionBlocks = [];
-    let currentFunction = null;
+    const blocks = [];
+    let current = null;
     for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        // 检测 FUNCTION 开始
-        const functionMatch = line.match(/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\b/i);
-        if (functionMatch) {
-            currentFunction = {
-                name: functionMatch[1],
-                content: '',
-                startLine: i,
-                endLine: -1
-            };
+        const l = stripInlineComment(lines[i]).trim();
+        const fm = l.match(REGEX_PATTERNS.FUNCTION);
+        if (fm) {
+            current = { name: fm[1], content: '', startLine: i, endLine: -1 };
         }
-        // 检测 END FUNCTION
-        if (/^\s*END\s+FUNCTION\s*$/i.test(line) && currentFunction) {
-            currentFunction.endLine = i;
-            currentFunction.content = lines.slice(currentFunction.startLine, i + 1).join('\n');
-            functionBlocks.push(currentFunction);
-            currentFunction = null;
+        if (/^\s*END\s+FUNCTION\b/i.test(l) && current) {
+            current.endLine = i;
+            current.content = lines.slice(current.startLine, i + 1).join('\n');
+            blocks.push(current);
+            current = null;
         }
     }
-    return functionBlocks;
+    return blocks;
 }
-// 解析函数签名，提取参数列表
-function parseFunctionSignature(functionContent) {
-    const lines = functionContent.split(/\r?\n/);
-    const firstLine = lines[0];
-    // 匹配函数声明模式： FUNCTION name() 或 FUNCTION name(param1, param2, ...)
-    const functionMatch = firstLine.match(/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)\s*$/i);
-    if (!functionMatch) {
-        return null;
-    }
-    const functionName = functionMatch[1];
-    const parameterString = functionMatch[2].trim();
-    // 解析参数列表
-    const parameters = parameterString
-        ? parameterString.split(',').map(p => p.trim()).filter(p => p.length > 0)
-        : [];
-    return {
-        name: functionName,
-        parameters: parameters,
-        startLine: 0,
-        endLine: lines.length - 1
-    };
-}
-// 从函数体内的 DEFINE 语句中提取与括号参数匹配的参数变量
-function extractDefineParameters(functionContent, bracketParameters) {
-    const lines = functionContent.split(/\r?\n/);
-    const defineParameters = [];
-    for (let i = 1; i < lines.length; i++) { // 跳过函数声明行
-        const line = lines[i].trim();
-        // 跳过注释和空行
-        if (!line || line.startsWith('#') || line.startsWith('--'))
-            continue;
-        // 修复：增强DEFINE语句匹配，支持 RECORD LIKE 类型
-        // 先检查是否是 RECORD LIKE 的定义
-        const recordLikeMatch = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*\*?\s*$/i);
-        if (recordLikeMatch) {
-            const variableName = recordLikeMatch[1];
-            // 检查这个变量是否在括号参数中
-            if (bracketParameters.includes(variableName)) {
-                defineParameters.push(variableName);
-            }
-            continue;
-        }
-        // 普通的 DEFINE 语句匹配
-        const defineMatch = line.match(/^\s*DEFINE\s+([^#\n]+?)\s+(?:LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|CHAR|DECIMAL|SMALLINT|BIGINT|DATE|DATETIME|VARCHAR|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
-        if (defineMatch) {
-            const variableList = defineMatch[1].trim();
-            const variables = variableList.split(',').map(v => v.trim()).filter(v => v.length > 0);
-            // 检查这些变量是否在括号参数中
-            variables.forEach(variable => {
-                if (bracketParameters.includes(variable)) {
-                    defineParameters.push(variable);
-                }
-            });
-        }
-    }
-    return defineParameters;
-}
-// 增强的函数签名解析器
 function parseEnhancedFunctionSignature(functionContent) {
     const lines = functionContent.split(/\r?\n/);
-    // 解析函数声明行 - 修复：支持函数声明后跟括号的格式
-    const firstLine = lines[0];
-    let functionMatch = firstLine.match(/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)\s*$/i);
-    // 如果第一行没有括号，检查是否是 FUNCTION name(params) 的格式，但括号可能在同一行
-    if (!functionMatch) {
-        functionMatch = firstLine.match(/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)/i);
-    }
-    if (!functionMatch) {
+    const first = stripInlineComment(lines[0] || '');
+    const m = first.match(/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)/i);
+    if (!m)
         return null;
-    }
-    const functionName = functionMatch[1];
-    const bracketParameterString = functionMatch[2].trim();
-    // 解析括号内参数
-    const bracketParameters = bracketParameterString
-        ? bracketParameterString.split(',').map(p => p.trim()).filter(p => p.length > 0)
-        : [];
-    // 解析函数体内的 DEFINE 参数
-    const defineParameters = extractDefineParameters(functionContent, bracketParameters);
-    // 合并所有参数
-    const allParameters = [...new Set([...bracketParameters, ...defineParameters])];
-    return {
-        name: functionName,
-        bracketParameters,
-        defineParameters,
-        allParameters,
-        startLine: 0,
-        endLine: lines.length - 1
-    };
+    const name = m[1];
+    const bracket = (m[2] || '').trim();
+    const bracketParams = bracket ? bracket.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const defineParams = extractDefineParameters(functionContent, bracketParams);
+    const all = Array.from(new Set([...bracketParams, ...defineParams]));
+    return { name, bracketParameters: bracketParams, defineParameters: defineParams, allParameters: all };
 }
-// 解析 RECORD 结构定义
+function extractDefineParameters(functionContent, bracketParameters) {
+    const lines = functionContent.split(/\r?\n/);
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+        const l = stripInlineComment(lines[i]).trim();
+        if (!l)
+            continue;
+        const rl = l.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+/i);
+        if (rl) {
+            const vn = rl[1];
+            if (bracketParameters.includes(vn))
+                out.push(vn);
+            continue;
+        }
+        const dm = l.match(/^\s*DEFINE\s+([^#\n]+?)\s+(?:LIKE\s+[A-ZaZ0-9_\.]+|STRING|INTEGER|CHAR|DECIMAL|SMALLINT|BIGINT|DATE|DATETIME|VARCHAR|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\b/i);
+        if (dm) {
+            const vars = dm[1].split(',').map(s => s.trim()).filter(Boolean);
+            vars.forEach(v => { if (bracketParameters.includes(v))
+                out.push(v); });
+        }
+    }
+    return out;
+}
+// --- Parse DEFINE statements (returns variable defs) ---------------------
 function parseRecordDefinition(lines, startIndex, actualLineNumber, scope) {
-    const recordMatch = lines[startIndex].match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s*$/i);
-    if (!recordMatch) {
+    const firstLine = stripInlineComment(lines[startIndex]).trim();
+    const m = firstLine.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s*$/i);
+    if (!m)
         return null;
+    const name = m[1];
+    let end = startIndex + 1;
+    while (end < lines.length) {
+        const candidate = stripInlineComment(lines[end]).trim();
+        if (/^\s*END\s+RECORD\s*$/i.test(candidate))
+            break;
+        end++;
     }
-    const variableName = recordMatch[1];
-    let endIndex = startIndex + 1;
-    // 找到 END RECORD
-    while (endIndex < lines.length && !/^\s*END\s+RECORD\s*$/i.test(lines[endIndex])) {
-        endIndex++;
-    }
-    return {
-        name: variableName,
-        type: 'RECORD',
-        line: actualLineNumber,
-        range: new vscode.Range(actualLineNumber, 0, actualLineNumber + (endIndex - startIndex), lines[endIndex] ? lines[endIndex].length : 0),
-        scope: scope
-    };
+    return { name, type: 'RECORD', line: actualLineNumber, range: new vscode.Range(actualLineNumber, 0, actualLineNumber + (end - startIndex), lines[end] ? lines[end].length : 0), scope };
 }
-// 解析 DEFINE 语句中的变量定义
 function parseDefineStatements(blockContent, startLineOffset, scope) {
-    const variables = [];
+    const out = [];
     const lines = blockContent.split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const actualLineNumber = startLineOffset + i;
-        // 跳过 FUNCTION 声明行和 END FUNCTION 行
-        if (/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+/i.test(line) || /^\s*END\s+FUNCTION\s*$/i.test(line)) {
+        const rawLine = lines[i];
+        const actualLine = startLineOffset + i;
+        const line = stripInlineComment(rawLine);
+        if (!line.trim())
+            continue; // empty or comment-only
+        if (/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+/i.test(line) || /^\s*END\s+FUNCTION\s*$/i.test(line))
+            continue;
+        if (/^\s*MAIN\b/i.test(line) || /^\s*END\s+MAIN\b/i.test(line))
+            continue;
+        const recordLike = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*/i);
+        if (recordLike) {
+            out.push({ name: recordLike[1], type: 'RECORD LIKE', line: actualLine, range: new vscode.Range(actualLine, 0, actualLine, line.length), scope });
             continue;
         }
-        // 跳过 MAIN 声明行和 END MAIN 行
-        if (/^\s*MAIN\s*$/i.test(line) || /^\s*END\s+MAIN\s*$/i.test(line)) {
+        const single = line.match(/^\s*DEFINE\s+(.+?)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+)\s*.*$/i);
+        if (single) {
+            const names = single[1].split(',').map(s => s.trim());
+            const typ = single[2];
+            names.forEach(n => { if (n && !/^(DEFINE|END|RECORD)$/i.test(n))
+                out.push({ name: n, type: typ, line: actualLine, range: new vscode.Range(actualLine, 0, actualLine, line.length), scope }); });
             continue;
         }
-        // 跳过注释行
-        if (/^\s*#/.test(line) || /^\s*--/.test(line)) {
+        const cont = line.match(/^\s+([A-Za-z0-9_]+)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+|[A-Za-z0-9_\.]+)\s*,?\s*$/i);
+        if (cont) {
+            const vn = cont[1];
+            const vt = cont[2];
+            if (!REGEX_PATTERNS.FGL_KEYWORDS.test(vn))
+                out.push({ name: vn, type: vt, line: actualLine, range: new vscode.Range(actualLine, 0, actualLine, line.length), scope });
             continue;
         }
-        // 单行 DEFINE 解析 - 修复：正确处理 RECORD LIKE 类型
-        // 先检查是否是 RECORD LIKE 的单行定义（支持行尾注释）
-        const recordLikeMatch = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*\*?\s*(?:#.*)?$/i);
-        if (recordLikeMatch) {
-            const variableName = recordLikeMatch[1];
-            console.log(`[DEBUG] 解析到 RECORD LIKE 语句: ${variableName}`);
-            variables.push({
-                name: variableName,
-                type: 'RECORD LIKE',
-                line: actualLineNumber,
-                range: new vscode.Range(actualLineNumber, 0, actualLineNumber, line.length),
-                scope: scope
-            });
-            continue;
-        }
-        // 普通的单行 DEFINE 解析（增强支持 DYNAMIC ARRAY OF 类型）
-        const singleDefineMatch = line.match(/^\s*DEFINE\s+(.+?)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+)\s*.*$/i);
-        if (singleDefineMatch) {
-            const variableNames = singleDefineMatch[1].split(',').map(name => name.trim());
-            const variableType = singleDefineMatch[2];
-            console.log(`[DEBUG] 解析到 DEFINE 语句: ${variableNames} : ${variableType}`);
-            variableNames.forEach(name => {
-                if (name && !/^(DEFINE|END|RECORD)$/i.test(name)) {
-                    console.log(`[DEBUG] 添加变量: ${name} (作用域: ${scope})`);
-                    variables.push({
-                        name: name,
-                        type: variableType,
-                        line: actualLineNumber,
-                        range: new vscode.Range(actualLineNumber, 0, actualLineNumber, line.length),
-                        scope: scope
-                    });
-                }
-            });
-            continue;
-        }
-        // 多行 DEFINE 续行解析
-        // 匹配形如 "         lnode_root      om.DomNode," 的续行
-        // 排除 4GL 关键字以避免误识别
-        const defineContMatch = line.match(/^\s+([A-Za-z0-9_]+)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+|[A-Za-z0-9_\.]+)\s*,?\s*$/i);
-        if (defineContMatch) {
-            const variableName = defineContMatch[1];
-            const variableType = defineContMatch[2];
-            // 排除 4GL 关键字
-            const fglKeywords = /^(END|IF|THEN|ELSE|ELSEIF|FOR|WHILE|CASE|WHEN|RETURN|CALL|LET|DISPLAY|PRINT|MESSAGE|CONTINUE|EXIT|FUNCTION|MAIN|RECORD|TYPE|DEFINE|GLOBAL|GLOBALS|LIKE|TO|FROM|WHERE|SELECT|INSERT|UPDATE|DELETE|NULL|TRUE|FALSE)$/i;
-            if (!fglKeywords.test(variableName)) {
-                console.log(`[DEBUG] 解析到多行 DEFINE 续行: ${variableName} : ${variableType}`);
-                variables.push({
-                    name: variableName,
-                    type: variableType,
-                    line: actualLineNumber,
-                    range: new vscode.Range(actualLineNumber, 0, actualLineNumber, line.length),
-                    scope: scope
-                });
-            }
-            continue;
-        }
-        // 多行 DEFINE 解析 (RECORD 结构)
         if (/^\s*DEFINE\s+\w+\s+RECORD\s*$/i.test(line)) {
-            const recordVar = parseRecordDefinition(lines, i, actualLineNumber, scope);
-            if (recordVar) {
-                variables.push(recordVar);
-                // 跳过 RECORD 内容直到 END RECORD
-                while (i < lines.length && !/^\s*END\s+RECORD\s*$/i.test(lines[i])) {
+            const rec = parseRecordDefinition(lines, i, actualLine, scope);
+            if (rec) {
+                out.push(rec);
+                while (i < lines.length) {
+                    const nxt = stripInlineComment(lines[i]);
+                    if (/^\s*END\s+RECORD\s*$/i.test(nxt))
+                        break;
                     i++;
                 }
             }
         }
     }
-    return variables;
+    return out;
 }
-// 转义正则表达式特殊字符
-function escapeRegExp(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-// 检测变量是否在行中被使用
+// --- Usage analysis ------------------------------------------------------
+function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&'); }
 function isVariableUsedInLine(line, variableName) {
-    // 移除注释
-    const cleanLine = line.replace(/#.*$/, '').replace(/--.*$/, '');
-    // 创建变量名的正则表达式（确保完整匹配）
-    const variableRegex = new RegExp(`\\b${escapeRegExp(variableName)}\\b`, 'i');
-    // 检查各种使用模式
-    const usagePatterns = [
-        // 赋值语句: LET variable = ... 或 LET variable.field = ...
-        new RegExp(`\\bLET\\s+${escapeRegExp(variableName)}(\\.\\w+)?\\s*[=\\[]`, 'i'),
-        // 表达式中使用: ... = variable + ...
-        new RegExp(`[=+\\-*/()\\s]${escapeRegExp(variableName)}[+\\-*/()\\s]`, 'i'),
-        // 函数参数: CALL func(variable)
-        new RegExp(`\\bCALL\\s+\\w+\\s*\\([^)]*${escapeRegExp(variableName)}[^)]*\\)`, 'i'),
-        // 条件语句: IF variable THEN
-        new RegExp(`\\bIF\\s+[^\\n]*${escapeRegExp(variableName)}`, 'i'),
-        // 输出语句: DISPLAY variable
-        new RegExp(`\\b(DISPLAY|PRINT|MESSAGE)\\s+[^\\n]*${escapeRegExp(variableName)}`, 'i'),
-        // SQL INTO 子句: SELECT ... INTO variable.* 或 INTO variable
-        new RegExp(`\\bINTO\\s+[^\\n]*${escapeRegExp(variableName)}(\\.\\*)?\\b`, 'i'),
-        // INITIALIZE 语句: INITIALIZE variable.* TO NULL
-        new RegExp(`\\bINITIALIZE\\s+${escapeRegExp(variableName)}(\\.\\*)?\\s+TO`, 'i'),
-        // INSERT INTO VALUES 语句: INSERT INTO table VALUES (variable.*)
-        new RegExp(`\\bINSERT\\s+INTO\\s+[^\\n]*VALUES\\s*\\([^)]*${escapeRegExp(variableName)}(\\.\\*)?[^)]*\\)`, 'i'),
-        // UPDATE SET 语句: UPDATE table SET field = variable
-        new RegExp(`\\bUPDATE\\s+[^\\n]*SET\\s+[^\\n]*${escapeRegExp(variableName)}`, 'i'),
-        // 简单的变量引用
-        new RegExp(`\\b${escapeRegExp(variableName)}\\b`, 'i')
+    const clean = line.replace(/#.*/g, '').replace(/--.*$/, '');
+    const v = escapeRegExp(variableName);
+    const pats = [
+        new RegExp(`\\bLET\\s+${v}(\\.\\w+)?\\s*[=\\[]`, 'i'),
+        new RegExp(`[=+\\-*/()\\s]${v}[+\\-*/()\\s]`, 'i'),
+        new RegExp(`\\bCALL\\s+\\w+\\s*\\([^)]*${v}[^)]*\\)`, 'i'),
+        new RegExp(`\\bIF\\s+[^\\n]*${v}`, 'i'),
+        new RegExp(`\\b(DISPLAY|PRINT|MESSAGE)\\s+[^\\n]*${v}`, 'i'),
+        new RegExp(`\\bINTO\\s+[^\\n]*${v}(\\.\\*)?\\b`, 'i'),
+        new RegExp(`\\bINITIALIZE\\s+${v}(\\.\\*)?\\s+TO`, 'i'),
+        new RegExp(`\\bINSERT\\s+INTO\\s+[^\\n]*VALUES\\s*\\([^)]*${v}(\\.\\*)?[^)]*\\)`, 'i'),
+        new RegExp(`\\bUPDATE\\s+[^\\n]*SET\\s+[^\\n]*${v}`, 'i'),
+        new RegExp(`\\b${v}\\b`, 'i')
     ];
-    return usagePatterns.some(pattern => pattern.test(cleanLine));
+    return pats.some(p => p.test(clean));
 }
-// 分析变量使用情况
 function analyzeVariableUsage(blockContent, variables) {
-    const usageMap = new Map();
+    const map = new Map();
+    variables.forEach(v => map.set(v.name, false));
     const lines = blockContent.split(/\r?\n/);
-    // 初始化所有变量为未使用
-    variables.forEach(variable => {
-        usageMap.set(variable.name, false);
+    lines.forEach(line => {
+        if (/^\s*#/.test(line) || /^\s*--/.test(line))
+            return;
+        if (/^\s*DEFINE\s+/.test(line))
+            return;
+        variables.forEach(v => { if (isVariableUsedInLine(line, v.name))
+            map.set(v.name, true); });
     });
-    // 分析每一行的变量使用
-    lines.forEach((line, index) => {
-        // 跳过注释行
-        if (/^\s*#/.test(line) || /^\s*--/.test(line)) {
-            return;
-        }
-        // 跳过 DEFINE 行
-        if (/^\s*DEFINE\s+/.test(line)) {
-            return;
-        }
-        // 跳过函数声明和结束行
-        if (/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+/i.test(line) ||
-            /^\s*END\s+FUNCTION\s*$/i.test(line) ||
-            /^\s*MAIN\s*$/i.test(line) ||
-            /^\s*END\s+MAIN\s*$/i.test(line)) {
-            return;
-        }
-        variables.forEach(variable => {
-            if (isVariableUsedInLine(line, variable.name)) {
-                usageMap.set(variable.name, true);
-            }
-        });
-    });
-    return usageMap;
+    return map;
 }
-// 未使用变量诊断提供器
+// --- Diagnostic provider -------------------------------------------------
 class UnusedVariableDiagnosticProvider {
-    constructor() {
-        this.diagnosticCollection = vscode.languages.createDiagnosticCollection('genero-fgl-unused-variables');
-    }
+    constructor() { this.diagnosticCollection = vscode.languages.createDiagnosticCollection('genero-fgl-unused-variables'); }
     updateDiagnostics(document) {
-        console.log(`[Diagnostic] Called for ${document.uri.fsPath}`);
-        // 检查配置是否启用
-        const config = vscode.workspace.getConfiguration('GeneroFGL');
-        const diagnosticEnabled = config.get('4gl.diagnostic.enable', true);
-        console.log(`[Diagnostic] Enabled: ${diagnosticEnabled}`);
-        if (!diagnosticEnabled) {
-            this.diagnosticCollection.clear();
-            return;
-        }
-        const text = document.getText();
-        const diagnostics = [];
-        console.log(`[Diagnostic] Processing ${text.split('\n').length} lines`);
-        // 处理 MAIN 块
-        const mainBlock = extractMainBlock(text);
-        if (mainBlock) {
-            console.log(`[Diagnostic] Found MAIN block`);
-            const mainVariables = parseDefineStatements(mainBlock.content, mainBlock.startLine, 'main');
-            console.log(`[Diagnostic] MAIN variables: ${mainVariables.map(v => v.name)}`);
-            const mainUsageMap = analyzeVariableUsage(mainBlock.content, mainVariables);
-            mainVariables.forEach(variable => {
-                const isUsed = mainUsageMap.get(variable.name);
-                console.log(`[Diagnostic] MAIN ${variable.name}: ${isUsed ? 'used' : 'unused'}`);
-                if (!isUsed) {
-                    const diagnostic = new vscode.Diagnostic(variable.range, `未使用的变量 '${variable.name}'，建议移除该变量声明`, vscode.DiagnosticSeverity.Warning);
-                    diagnostic.source = 'Genero FGL';
-                    diagnostic.code = 'unused-variable';
-                    diagnostic.tags = [vscode.DiagnosticTag.Unnecessary];
-                    diagnostics.push(diagnostic);
+        try {
+            const config = vscode.workspace.getConfiguration('GeneroFGL');
+            const enabled = config.get('4gl.diagnostic.enable', true);
+            if (!enabled) {
+                this.diagnosticCollection.clear();
+                return;
+            }
+            const text = document.getText();
+            const diagnostics = [];
+            const mainBlock = extractMainBlock(text);
+            if (mainBlock) {
+                const vars = parseDefineStatements(mainBlock.content, mainBlock.startLine, 'main');
+                const usage = analyzeVariableUsage(mainBlock.content, vars);
+                vars.forEach(v => {
+                    const used = usage.get(v.name);
+                    if (!used) {
+                        const d = new vscode.Diagnostic(v.range, `未使用的變數 '${v.name}'`, vscode.DiagnosticSeverity.Warning);
+                        d.source = 'Genero FGL';
+                        d.code = 'unused-variable';
+                        d.tags = [vscode.DiagnosticTag.Unnecessary];
+                        diagnostics.push(d);
+                    }
+                });
+            }
+            // Detect GLOBALS blocks and do not emit unused-variable diagnostics for them
+            // because GLOBALS are intentionally global/shared and may be referenced elsewhere.
+            const lines = text.split(/\r?\n/);
+            for (let i = 0; i < lines.length; i++) {
+                const l = lines[i].trim();
+                if (/^\s*GLOBALS\b/i.test(l)) {
+                    let k = i + 1;
+                    while (k < lines.length && !/^\s*END\s+GLOBALS\b/i.test(stripInlineComment(lines[k])))
+                        k++;
+                    const block = lines.slice(i, Math.min(k, lines.length - 1) + 1).join('\n');
+                    // parse to register but skip diagnostics
+                    parseDefineStatements(block, i, 'global');
+                    i = k;
                 }
+            }
+            const funcs = extractFunctionBlocks(text);
+            funcs.forEach(fb => {
+                const sig = parseEnhancedFunctionSignature(fb.content);
+                const allParams = sig ? sig.allParameters : [];
+                const fvars = parseDefineStatements(fb.content, fb.startLine, 'function');
+                const localVars = fvars.filter(v => !allParams.includes(v.name));
+                const usage = analyzeVariableUsage(fb.content, localVars);
+                localVars.forEach(v => {
+                    const used = usage.get(v.name);
+                    if (!used) {
+                        const d = new vscode.Diagnostic(v.range, `函式 '${fb.name}' 中未使用的變數 '${v.name}'`, vscode.DiagnosticSeverity.Warning);
+                        d.source = 'Genero FGL';
+                        d.code = 'unused-variable';
+                        d.tags = [vscode.DiagnosticTag.Unnecessary];
+                        diagnostics.push(d);
+                    }
+                });
             });
+            this.diagnosticCollection.set(document.uri, diagnostics);
+        }
+        catch (err) {
+            console.error('[Genero FGL] updateDiagnostics error', err);
+            this.diagnosticCollection.delete(document.uri);
+        }
+    }
+    clearDiagnostics(uri) { this.diagnosticCollection.delete(uri); }
+    dispose() { this.diagnosticCollection.dispose(); }
+}
+function isDiagnosticEnabled() { const cfg = vscode.workspace.getConfiguration('GeneroFGL'); return cfg.get('4gl.diagnostic.enable', true); }
+function getDiagnosticDelay() { const cfg = vscode.workspace.getConfiguration('GeneroFGL'); return cfg.get('4gl.diagnostic.delay', 500); }
+let diagnosticTimer;
+// --- Definition provider -------------------------------------------------
+class FourGLDefinitionProvider {
+    async provideDefinition(document, position) {
+        const wr = document.getWordRangeAtPosition(position, /[A-Za-z0-9_\.]+/);
+        if (!wr)
+            return null;
+        const word = document.getText(wr);
+        const local = this.findDefinitionInText(document.getText(), word, document.uri);
+        if (local)
+            return local;
+        const files = await vscode.workspace.findFiles('**/*.4gl');
+        for (const f of files) {
+            if (f.toString() === document.uri.toString())
+                continue;
+            try {
+                const doc = await vscode.workspace.openTextDocument(f);
+                const def = this.findDefinitionInText(doc.getText(), word, f);
+                if (def)
+                    return def;
+            }
+            catch { /* ignore */ }
+        }
+        return null;
+    }
+    findDefinitionInText(text, name, uri) {
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+            const ln = lines[i].replace(/#.*/g, '').replace(/--.*$/, '').trim();
+            const mf = ln.match(REGEX_PATTERNS.FUNCTION);
+            if (mf && mf[1].toLowerCase() === name.toLowerCase())
+                return new vscode.Location(uri, new vscode.Position(i, 0));
+            const mr = ln.match(REGEX_PATTERNS.REPORT);
+            if (mr && mr[1].toLowerCase() === name.toLowerCase())
+                return new vscode.Location(uri, new vscode.Position(i, 0));
+        }
+        return null;
+    }
+}
+// --- Activation ----------------------------------------------------------
+function activate(context) {
+    console.log('[Genero FGL] activating');
+    context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider({ language: '4gl' }, { provideDocumentSymbols(document) { return parseDocumentSymbols(document.getText()); } }));
+    context.subscriptions.push(vscode.languages.registerDefinitionProvider({ language: '4gl' }, new FourGLDefinitionProvider()));
+    const diagProvider = new UnusedVariableDiagnosticProvider();
+    context.subscriptions.push(diagProvider);
+    const onChange = vscode.workspace.onDidChangeTextDocument(ev => {
+        if (ev.document.languageId !== '4gl')
+            return;
+        if (!isDiagnosticEnabled())
+            return;
+        if (diagnosticTimer)
+            clearTimeout(diagnosticTimer);
+        diagnosticTimer = setTimeout(() => diagProvider.updateDiagnostics(ev.document), getDiagnosticDelay());
+    });
+    context.subscriptions.push(onChange);
+    const onOpen = vscode.workspace.onDidOpenTextDocument(doc => { if (doc.languageId === '4gl' && isDiagnosticEnabled())
+        diagProvider.updateDiagnostics(doc); });
+    context.subscriptions.push(onOpen);
+    const cfg = vscode.workspace.onDidChangeConfiguration(ev => {
+        if (ev.affectsConfiguration('GeneroFGL.4gl.diagnostic')) {
+            vscode.workspace.textDocuments.forEach(d => { if (d.languageId === '4gl') {
+                if (isDiagnosticEnabled())
+                    diagProvider.updateDiagnostics(d);
+                else
+                    diagProvider.clearDiagnostics(d.uri);
+            } });
+        }
+    });
+    context.subscriptions.push(cfg);
+    // initial run
+    vscode.workspace.textDocuments.forEach(d => { if (d.languageId === '4gl' && isDiagnosticEnabled())
+        diagProvider.updateDiagnostics(d); });
+    context.subscriptions.push(vscode.commands.registerCommand('genero-fgl.runDiagnostics', () => {
+        const ae = vscode.window.activeTextEditor;
+        if (ae && ae.document.languageId === '4gl') {
+            diagProvider.updateDiagnostics(ae.document);
+            vscode.window.showInformationMessage('已运行未使用变量诊断');
         }
         else {
-            console.log(`[Diagnostic] No MAIN block found`);
+            vscode.window.showWarningMessage('请打开一个 .4gl 文件');
         }
-        // 处理 FUNCTION 块
-        const functionBlocks = extractFunctionBlocks(text);
-        console.log(`[Diagnostic] Found ${functionBlocks.length} functions`);
-        functionBlocks.forEach(funcBlock => {
-            console.log(`[Diagnostic] Processing function ${funcBlock.name}`);
-            // 使用增强的函数签名解析器，获取所有参数列表
-            const enhancedSignature = parseEnhancedFunctionSignature(funcBlock.content);
-            const allParameters = enhancedSignature ? enhancedSignature.allParameters : [];
-            console.log(`[Diagnostic] Function ${funcBlock.name} parameters: ${allParameters}`);
-            // 解析函数中的所有变量定义
-            const allFuncVariables = parseDefineStatements(funcBlock.content, funcBlock.startLine, 'function');
-            console.log(`[Diagnostic] Function ${funcBlock.name} all variables: ${allFuncVariables.map(v => v.name)}`);
-            // 过滤掉所有参数变量（括号内参数和 DEFINE 语句参数），只检查局部变量
-            const localVariables = allFuncVariables.filter(variable => !allParameters.includes(variable.name));
-            console.log(`[Diagnostic] Function ${funcBlock.name} local variables: ${localVariables.map(v => v.name)}`);
-            // 分析局部变量的使用情况
-            const funcUsageMap = analyzeVariableUsage(funcBlock.content, localVariables);
-            // 只为未使用的局部变量生成诊断信息
-            localVariables.forEach(variable => {
-                const isUsed = funcUsageMap.get(variable.name);
-                console.log(`[Diagnostic] Function ${funcBlock.name} variable ${variable.name}: ${isUsed ? 'used' : 'unused'}`);
-                if (!isUsed) {
-                    const diagnostic = new vscode.Diagnostic(variable.range, `函数 '${funcBlock.name}' 中未使用的变量 '${variable.name}'，建议移除该变量声明`, vscode.DiagnosticSeverity.Warning);
-                    diagnostic.source = 'Genero FGL';
-                    diagnostic.code = 'unused-variable';
-                    diagnostic.tags = [vscode.DiagnosticTag.Unnecessary];
-                    diagnostics.push(diagnostic);
-                }
-            });
-        });
-        console.log(`[Diagnostic] Generated ${diagnostics.length} diagnostics`);
-        this.diagnosticCollection.set(document.uri, diagnostics);
-    }
-    clearDiagnostics(uri) {
-        this.diagnosticCollection.delete(uri);
-    }
-    dispose() {
-        this.diagnosticCollection.dispose();
-    }
-}
-// 配置读取函数
-function isDiagnosticEnabled() {
-    const config = vscode.workspace.getConfiguration('GeneroFGL');
-    return config.get('4gl.diagnostic.enable', true);
-}
-function getDiagnosticDelay() {
-    const config = vscode.workspace.getConfiguration('GeneroFGL');
-    return config.get('4gl.diagnostic.delay', 500);
+    }));
+    console.log('[Genero FGL] activated');
 }
 function deactivate() { }

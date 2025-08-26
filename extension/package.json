@@ -126,7 +126,9 @@
                 "aliases": ["Genero 4gl"],
                 "extensions": [
                     ".4gl",
-                    ".4GL"
+                    ".4GL",
+                    ".global",
+                    ".GLOBAL"
                 ],
                 "configuration": "./language-configuration.json"
             },
