@@ -91,290 +91,84 @@ export function parseDocumentSymbols(text: string): vscode.DocumentSymbol[] {
         const childSym = convert(c);
         if (childSym) ds.children.push(childSym);
       }
-
-      // process normalParts: merge into a single string and apply name/type extraction
-      const afterDefine = normalParts.join(', ');
-      if (afterDefine) {
-        const parts = afterDefine.split(',').map(p => p.trim()).filter(Boolean);
-        let pending: string[] = [];
-        let sawType = false;
-        for (const part of parts) {
-          // skip pure keywords that shouldn't be treated as names
-          if (/^(DEFINE|END|RECORD)$/i.test(part)) continue;
-          const mt = part.match(reTypeWord);
-          if (mt) {
-            const idx = part.search(new RegExp(`\\b${mt[1]}\\b`, 'i'));
-            const namesStr = idx >= 0 ? part.substring(0, idx) : part;
-            const names = namesStr
-              .split(',')
-              .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
-              .filter(Boolean)
-              .filter(n => !/^(DEFINE|END|RECORD)$/i.test(n));
-            const all = pending.concat(names);
-            for (const nm of all) {
-              if (!nm) continue;
-              const vr = new vscode.Range(blockStart, 0, blockEnd, Math.max(1, lines[blockEnd].length));
-              const vsym = new vscode.DocumentSymbol(nm, '', vscode.SymbolKind.Variable, vr, vr);
-              if (currentFunction) currentFunction.children.push(vsym);
-              else if (inMain) mainGroup.children.push(vsym);
-              else moduleVarsGroup.children.push(vsym);
-            }
-            pending = [];
-            sawType = true;
-          } else {
-            const names = part
-              .split(',')
-              .map(s => s.replace(/^\s*DEFINE\s+/i, '').trim())
-              .filter(Boolean)
-              .filter(n => !/^(DEFINE|END|RECORD)$/i.test(n));
-            pending.push(...names);
-          }
-        }
-        // don't emit dangling names without a detected type to avoid false positives
-      }
-
-      continue;
     }
-
-    // inline RECORD without DEFINE
-    const inlineRec = line.match(reRecordStart);
-    if (inlineRec) {
-      const recName = inlineRec[1];
-      let k = i + 1;
-      const rfields: string[] = [];
-      
-      while (k < lines.length && !reEndRecord.test(lines[k])) {
-        // Remove comments (both # and --) from the line
-        const cleanLine = lines[k].replace(/#.*$/, '').replace(/--.*$/, '').trim();
-        if (cleanLine) {
-          // Match field definitions: fieldname TYPE or fieldname LIKE table.field (with optional comma)
-          const fm = cleanLine.match(/^\s*([A-Za-z0-9_]+)\s+(LIKE\s+[A-Za-z0-9_\.]+|STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT)\s*,?\s*$/i);
-          if (fm) rfields.push(fm[1]);
-        }
-        k++;
-      }
-      
-      const r = new vscode.Range(i, 0, k < lines.length ? k : i, Math.max(1, lines[k] ? lines[k].length : lines[i].length));
-  const recSym = new vscode.DocumentSymbol(recName, '', vscode.SymbolKind.Struct, r, r);
-      for (const fn of rfields) recSym.children.push(new vscode.DocumentSymbol(fn, '', vscode.SymbolKind.Field, r, r));
-  if (currentFunction) currentFunction.children.push(recSym);
-  else if (inMain) mainGroup.children.push(recSym);
-  else moduleVarsGroup.children.push(recSym);
-      if (k < lines.length) i = k;
-      continue;
-    }
-
-    // single-line DEFINE like 'DEFINE l_msg STRING'
-    const singleDef = line.match(/^\s*DEFINE\s+(.+?)\s+(LIKE|STRING|INTEGER|DATE|CHAR|NUM|REAL|DECIMAL)\b/i);
-    if (singleDef) {
-      const left = singleDef[1].trim();
-      // Remove both # and -- comments before processing
-      const names = left.split(',').map(s => s.replace(/#.*$/,'').replace(/--.*$/,'').trim()).filter(Boolean);
-      for (const nm of names) {
-        const vr = new vscode.Range(i, 0, i, Math.max(1, line.length));
-        const vsym = new vscode.DocumentSymbol(nm, '', vscode.SymbolKind.Variable, vr, vr);
-  if (currentFunction) currentFunction.children.push(vsym);
-  else if (inMain) mainGroup.children.push(vsym);
-  else moduleVarsGroup.children.push(vsym);
-      }
-      continue;
-    }
+    return ds;
   }
 
-  // order: MAIN, FUNCTION, REPORT, MODULE_VARIABLE
-  if (mainGroup.children.length) symbols.push(mainGroup);
-  if (functionsGroup.children.length) symbols.push(functionsGroup);
-  if (reportsGroup.children.length) symbols.push(reportsGroup);
-  if (moduleVarsGroup.children.length) symbols.push(moduleVarsGroup);
-
-  return symbols;
-}
-
-// Definition provider
-class FourGLDefinitionProvider implements vscode.DefinitionProvider {
-  async provideDefinition(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.Location | vscode.Location[] | null> {
-    const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z0-9_.]+/);
-    if (!wordRange) return null;
-    const word = document.getText(wordRange);
-    const shortName = word.includes('.') ? word.split('.').pop() || word : word;
-
-    // Get the line containing the word to determine if it's a report or function call
-    const line = document.lineAt(position.line).text;
-    const isReportCall = /\b(START\s+REPORT|OUTPUT\s+TO\s+REPORT|FINISH\s+REPORT)\b/i.test(line);
-    
-    // Debug information
-    const debugInfo = `Word: '${word}', Line: '${line.trim()}', IsReportCall: ${isReportCall}`;
-    console.log(`[DEBUG] ${debugInfo}`);
-    
-    // search in current document
-    const lines = document.getText().split(/\r?\n/);
-    
-    if (isReportCall) {
-      // Search for REPORT definition
-      const reRepLine = new RegExp(`^\\s*REPORT\\s+${shortName}\\b`, 'i');
-      console.log(`[DEBUG] Searching for REPORT pattern: ${reRepLine.source}`);
-      for (let i = 0; i < lines.length; i++) {
-        if (reRepLine.test(lines[i])) {
-          console.log(`[DEBUG] Found REPORT at line ${i + 1}: '${lines[i].trim()}'`);
-          vscode.window.showInformationMessage(`Found REPORT '${shortName}' at line ${i + 1}`);
-          return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
-        }
-      }
-      console.log(`[DEBUG] REPORT '${shortName}' not found in current document`);
-      vscode.window.showWarningMessage(`REPORT '${shortName}' not found in current document`);
-    } else {
-      // Search for FUNCTION definition
-      const reFuncLine = new RegExp(`^\\s*(?:PUBLIC|PRIVATE|STATIC)?\\s*FUNCTION\\s+${shortName}\\b`, 'i');
-      console.log(`[DEBUG] Searching for FUNCTION pattern: ${reFuncLine.source}`);
-      for (let i = 0; i < lines.length; i++) {
-        if (reFuncLine.test(lines[i])) {
-          console.log(`[DEBUG] Found FUNCTION at line ${i + 1}: '${lines[i].trim()}'`);
-          vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' at line ${i + 1}`);
-          return new vscode.Location(document.uri, new vscode.Range(i, 0, i, Math.max(1, lines[i].length)));
-        }
-      }
-      console.log(`[DEBUG] FUNCTION '${shortName}' not found in current document`);
-    }
-
-    // search other workspace files
-    const files = await vscode.workspace.findFiles('**/*.{4gl,4GL}', '**/node_modules/**', 500);
-    console.log(`[DEBUG] Searching in ${files.length} workspace files`);
-    for (const f of files) {
-      if (f.toString() === document.uri.toString()) continue;
-      try {
-        const doc = await vscode.workspace.openTextDocument(f);
-        const docLines = doc.getText().split(/\r?\n/);
-        
-        if (isReportCall) {
-          // Search for REPORT definition in other files
-          const reRepLine = new RegExp(`^\\s*REPORT\\s+${shortName}\\b`, 'i');
-          for (let i = 0; i < docLines.length; i++) {
-            if (reRepLine.test(docLines[i])) {
-              console.log(`[DEBUG] Found REPORT in ${f.fsPath} at line ${i + 1}`);
-              vscode.window.showInformationMessage(`Found REPORT '${shortName}' in ${f.fsPath} at line ${i + 1}`);
-              return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
+  try {
+    const syms = parseSymbols(text);
+    for (const s of syms) {
+      switch (s.kind) {
+        case 'Main': {
+          // add children of Main into mainGroup
+          mainGroup.range = toRange(s.start, s.end);
+          mainGroup.selectionRange = new vscode.Range(s.start, 0, s.start, Math.max(1, lines[s.start] ? lines[s.start].length : 0));
+          if (s.children) {
+            for (const c of s.children) {
+              const cs = convert(c);
+              if (cs) mainGroup.children.push(cs);
             }
           }
-        } else {
-          // Search for FUNCTION definition in other files
-          const reFuncLine = new RegExp(`^\\s*(?:PUBLIC|PRIVATE|STATIC)?\\s*FUNCTION\\s+${shortName}\\b`, 'i');
-          for (let i = 0; i < docLines.length; i++) {
-            if (reFuncLine.test(docLines[i])) {
-              console.log(`[DEBUG] Found FUNCTION in ${f.fsPath} at line ${i + 1}`);
-              vscode.window.showInformationMessage(`Found FUNCTION '${shortName}' in ${f.fsPath} at line ${i + 1}`);
-              return new vscode.Location(f, new vscode.Range(i, 0, i, Math.max(1, docLines[i].length)));
+          break;
+        }
+        case 'Function': {
+          const fsym = convert(s);
+          if (fsym) functionsGroup.children.push(fsym);
+          break;
+        }
+        case 'Report': {
+          const rsym = convert(s);
+          if (rsym) reportsGroup.children.push(rsym);
+          break;
+        }
+        case 'ModuleVariable': {
+          if (s.children) {
+            for (const c of s.children) {
+              const cs = convert(c);
+              if (cs) moduleVarsGroup.children.push(cs);
             }
           }
+          break;
         }
-      } catch {
-        // ignore
+        case 'Globals': {
+          if (s.children) {
+            for (const c of s.children) {
+              const cs = convert(c);
+              if (cs) globalVarsGroup.children.push(cs);
+            }
+          }
+          break;
+        }
+        case 'Record': {
+          const rs = convert(s);
+          if (rs) moduleVarsGroup.children.push(rs);
+          break;
+        }
+        case 'Variable': {
+          // top-level variable outside main/function -> module variable area
+          const vsym = convert(s);
+          if (vsym) moduleVarsGroup.children.push(vsym);
+          break;
+        }
+        default: {
+          const anySym = convert(s);
+          if (anySym) out.push(anySym);
+          break;
+        }
       }
     }
-
-    console.log(`[DEBUG] No definition found for '${shortName}' (isReportCall: ${isReportCall})`);
-    vscode.window.showWarningMessage(`No definition found for '${shortName}'${isReportCall ? ' (REPORT)' : ' (FUNCTION)'}`);
-    return null;
+  } catch (err) {
+    console.error('[Genero FGL] parseDocumentSymbols error', err);
   }
-}
 
-let diagnosticTimeout: NodeJS.Timeout;
+  // push groups in expected order if they have children
+  if (mainGroup.children.length) out.push(mainGroup);
+  if (functionsGroup.children.length) out.push(functionsGroup);
+  if (reportsGroup.children.length) out.push(reportsGroup);
+  if (moduleVarsGroup.children.length) out.push(moduleVarsGroup);
+  if (globalVarsGroup.children.length) out.push(globalVarsGroup);
 
-export function activate(context: vscode.ExtensionContext) {
-  console.log('[Genero FGL] Extension activating...');
-  
-  // 注册文档符号提供器
-  context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider({ language: '4gl' }, { provideDocumentSymbols(document) { return parseDocumentSymbols(document.getText()); } }));
-  
-  // 注册定义提供器
-  context.subscriptions.push(vscode.languages.registerDefinitionProvider({ language: '4gl' }, new FourGLDefinitionProvider()));
-  
-  // 注册未使用变量诊断提供器
-  const unusedVariableDiagnosticProvider = new UnusedVariableDiagnosticProvider();
-  context.subscriptions.push(unusedVariableDiagnosticProvider);
-  console.log('[Genero FGL] Diagnostic provider registered');
-  
-  // 文档变更监听
-  const documentChangeListener = vscode.workspace.onDidChangeTextDocument(event => {
-    console.log(`[Genero FGL] Document change: ${event.document.uri.fsPath}, language: ${event.document.languageId}`);
-    if (event.document.languageId === '4gl' && isDiagnosticEnabled()) {
-      console.log('[Genero FGL] Running diagnostics for change...');
-      // 防抖处理
-      clearTimeout(diagnosticTimeout);
-      diagnosticTimeout = setTimeout(() => {
-        unusedVariableDiagnosticProvider.updateDiagnostics(event.document);
-      }, getDiagnosticDelay());
-    }
-  });
-  
-  context.subscriptions.push(documentChangeListener);
-  
-  // 文档打开监听
-  const documentOpenListener = vscode.workspace.onDidOpenTextDocument(document => {
-    console.log(`[Genero FGL] Document opened: ${document.uri.fsPath}, language: ${document.languageId}`);
-    if (document.languageId === '4gl' && isDiagnosticEnabled()) {
-      console.log('[Genero FGL] Running diagnostics for opened document...');
-      unusedVariableDiagnosticProvider.updateDiagnostics(document);
-    }
-  });
-  
-  context.subscriptions.push(documentOpenListener);
-  
-  // 配置变更监听
-  const configChangeListener = vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('GeneroFGL.4gl.diagnostic')) {
-      console.log('[Genero FGL] Configuration changed');
-      vscode.workspace.textDocuments.forEach(document => {
-        if (document.languageId === '4gl') {
-          if (isDiagnosticEnabled()) {
-            unusedVariableDiagnosticProvider.updateDiagnostics(document);
-          } else {
-            unusedVariableDiagnosticProvider.clearDiagnostics(document.uri);
-          }
-        }
-      });
-    }
-  });
-  
-  context.subscriptions.push(configChangeListener);
-  
-  // 初始化时处理已打开的文档
-  console.log(`[Genero FGL] Processing ${vscode.workspace.textDocuments.length} open documents`);
-  vscode.workspace.textDocuments.forEach(document => {
-    console.log(`[Genero FGL] Document: ${document.uri.fsPath}, language: ${document.languageId}`);
-    if (document.languageId === '4gl' && isDiagnosticEnabled()) {
-      console.log('[Genero FGL] Running initial diagnostics...');
-      unusedVariableDiagnosticProvider.updateDiagnostics(document);
-    }
-  });
-  
-  // 添加手动触发诊断的命令
-  const manualDiagnosticCommand = vscode.commands.registerCommand('genero-fgl.runDiagnostics', () => {
-    const activeEditor = vscode.window.activeTextEditor;
-    if (activeEditor && activeEditor.document.languageId === '4gl') {
-      console.log(`[Genero FGL] Manual diagnostic triggered for ${activeEditor.document.uri.fsPath}`);
-      unusedVariableDiagnosticProvider.updateDiagnostics(activeEditor.document);
-      vscode.window.showInformationMessage('已运行未使用变量诊断');
-    } else {
-      console.log('[Genero FGL] No 4gl document active');
-      vscode.window.showWarningMessage('请打开一个 .4gl 文件');
-    }
-  });
-  
-  context.subscriptions.push(manualDiagnosticCommand);
-  
-  console.log('[Genero FGL] Extension activation completed');
-}
-
-// ================ 未使用变量检测功能 ================
-
-// 变量定义接口
-interface VariableDefinition {
-  name: string;           // 变量名
-  type: string;          // 变量类型
-  line: number;          // 定义行号
-  range: vscode.Range;   // 定义范围
-  scope: 'main' | 'function'; // 作用域
-  category?: 'parameter' | 'local'; // 新增分类字段
+  return out;
 }
 
 // --- extract MAIN block; tolerate missing END MAIN by falling back to EOF ---
@@ -456,89 +250,19 @@ function parseDefineStatements(blockContent: string, startLineOffset: number, sc
   const out: VariableDefinition[] = [];
   const lines = blockContent.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const actualLineNumber = startLineOffset + i;
-    
-    // 跳过 FUNCTION 声明行和 END FUNCTION 行
-    if (/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+/i.test(line) || /^\s*END\s+FUNCTION\s*$/i.test(line)) {
-      continue;
-    }
-    
-    // 跳过 MAIN 声明行和 END MAIN 行
-    if (/^\s*MAIN\s*$/i.test(line) || /^\s*END\s+MAIN\s*$/i.test(line)) {
-      continue;
-    }
-    
-    // 跳过注释行
-    if (/^\s*#/.test(line) || /^\s*--/.test(line)) {
-      continue;
-    }
-    
-    // 单行 DEFINE 解析 - 修复：正确处理 RECORD LIKE 类型
-    // 先检查是否是 RECORD LIKE 的单行定义（支持行尾注释）
-    const recordLikeMatch = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*\*?\s*(?:#.*)?$/i);
-    if (recordLikeMatch) {
-      const variableName = recordLikeMatch[1];
-      console.log(`[DEBUG] 解析到 RECORD LIKE 语句: ${variableName}`);
-      
-      variables.push({
-        name: variableName,
-        type: 'RECORD LIKE',
-        line: actualLineNumber,
-        range: new vscode.Range(actualLineNumber, 0, actualLineNumber, line.length),
-        scope: scope
-      });
-      continue;
-    }
-    
-    // 普通的单行 DEFINE 解析（增强支持 DYNAMIC ARRAY OF 类型）
-    const singleDefineMatch = line.match(/^\s*DEFINE\s+(.+?)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+)\s*.*$/i);
-    if (singleDefineMatch) {
-      const variableNames = singleDefineMatch[1].split(',').map(name => name.trim());
-      const variableType = singleDefineMatch[2];
-      
-      console.log(`[DEBUG] 解析到 DEFINE 语句: ${variableNames} : ${variableType}`);
-      
-      variableNames.forEach(name => {
-        if (name && !/^(DEFINE|END|RECORD)$/i.test(name)) {
-          console.log(`[DEBUG] 添加变量: ${name} (作用域: ${scope})`);
-          variables.push({
-            name: name,
-            type: variableType,
-            line: actualLineNumber,
-            range: new vscode.Range(actualLineNumber, 0, actualLineNumber, line.length),
-            scope: scope
-          });
-        }
-      });
-      continue;
-    }
-    
-    // 多行 DEFINE 续行解析
-    // 匹配形如 "         lnode_root      om.DomNode," 的续行
-    // 排除 4GL 关键字以避免误识别
-    const defineContMatch = line.match(/^\s+([A-Za-z0-9_]+)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+|[A-Za-z0-9_\.]+)\s*,?\s*$/i);
-    if (defineContMatch) {
-      const variableName = defineContMatch[1];
-      const variableType = defineContMatch[2];
-      
-      // 排除 4GL 关键字
-      const fglKeywords = /^(END|IF|THEN|ELSE|ELSEIF|FOR|WHILE|CASE|WHEN|RETURN|CALL|LET|DISPLAY|PRINT|MESSAGE|CONTINUE|EXIT|FUNCTION|MAIN|RECORD|TYPE|DEFINE|GLOBAL|GLOBALS|LIKE|TO|FROM|WHERE|SELECT|INSERT|UPDATE|DELETE|NULL|TRUE|FALSE)$/i;
-      if (!fglKeywords.test(variableName)) {
-        console.log(`[DEBUG] 解析到多行 DEFINE 续行: ${variableName} : ${variableType}`);
-        
-        variables.push({
-          name: variableName,
-          type: variableType,
-          line: actualLineNumber,
-          range: new vscode.Range(actualLineNumber, 0, actualLineNumber, line.length),
-          scope: scope
-        });
-      }
-      continue;
-    }
-    
-    // 多行 DEFINE 解析 (RECORD 结构)
+    const rawLine = lines[i]; const actualLine = startLineOffset + i;
+    const line = stripInlineComment(rawLine);
+    if (!line.trim()) continue; // empty or comment-only
+    if (/^\s*(?:PUBLIC|PRIVATE|STATIC)?\s*FUNCTION\s+/i.test(line) || /^\s*END\s+FUNCTION\s*$/i.test(line)) continue;
+    if (/^\s*MAIN\b/i.test(line) || /^\s*END\s+MAIN\b/i.test(line)) continue;
+
+    const recordLike = line.match(/^\s*DEFINE\s+([A-Za-z0-9_]+)\s+RECORD\s+LIKE\s+[A-Za-z0-9_\.]+\s*/i);
+    if (recordLike) { out.push({ name: recordLike[1], type: 'RECORD LIKE', line: actualLine, range: new vscode.Range(actualLine, 0, actualLine, line.length), scope }); continue; }
+    const single = line.match(/^\s*DEFINE\s+(.+?)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+)\s*.*$/i);
+    if (single) { const names = single[1].split(',').map(s => s.trim()); const typ = single[2]; names.forEach(n => { if (n && !/^(DEFINE|END|RECORD)$/i.test(n)) out.push({ name: n, type: typ, line: actualLine, range: new vscode.Range(actualLine, 0, actualLine, line.length), scope }); }); continue; }
+    const cont = line.match(/^\s+([A-Za-z0-9_]+)\s+(STRING|INTEGER|SMALLINT|BIGINT|DATE|DATETIME|CHAR|VARCHAR|DECIMAL|FLOAT|REAL|MONEY|BOOLEAN|BYTE|TEXT|DYNAMIC\s+ARRAY\s+OF\s+\w+|LIKE\s+[A-Za-z0-9_]+\.[A-Za-z0-9_]+|LIKE\s+[A-Za-z0-9_\.]+|[A-Za-z0-9_\.]+)\s*,?\s*$/i);
+    if (cont) { const vn = cont[1]; const vt = cont[2]; if (!REGEX_PATTERNS.FGL_KEYWORDS.test(vn)) out.push({ name: vn, type: vt, line: actualLine, range: new vscode.Range(actualLine, 0, actualLine, line.length), scope }); continue; }
+
     if (/^\s*DEFINE\s+\w+\s+RECORD\s*$/i.test(line)) {
       const rec = parseRecordDefinition(lines, i, actualLine, scope);
       if (rec) { out.push(rec); while (i < lines.length) {
@@ -589,118 +313,135 @@ class UnusedVariableDiagnosticProvider {
   private diagnosticCollection: vscode.DiagnosticCollection;
   constructor() { this.diagnosticCollection = vscode.languages.createDiagnosticCollection('genero-fgl-unused-variables'); }
   public updateDiagnostics(document: vscode.TextDocument): void {
-    console.log(`[Diagnostic] Called for ${document.uri.fsPath}`);
-    
-    // 检查配置是否启用
-    const config = vscode.workspace.getConfiguration('GeneroFGL');
-    const diagnosticEnabled = config.get('4gl.diagnostic.enable', true);
-    console.log(`[Diagnostic] Enabled: ${diagnosticEnabled}`);
-    
-    if (!diagnosticEnabled) {
-      this.diagnosticCollection.clear();
-      return;
-    }
-    
-    const text = document.getText();
-    const diagnostics: vscode.Diagnostic[] = [];
-    console.log(`[Diagnostic] Processing ${text.split('\n').length} lines`);
-    
-    // 处理 MAIN 块
-    const mainBlock = extractMainBlock(text);
-    if (mainBlock) {
-      console.log(`[Diagnostic] Found MAIN block`);
-      const mainVariables = parseDefineStatements(mainBlock.content, mainBlock.startLine, 'main');
-      console.log(`[Diagnostic] MAIN variables: ${mainVariables.map(v => v.name)}`);
-      const mainUsageMap = analyzeVariableUsage(mainBlock.content, mainVariables);
-      
-      mainVariables.forEach(variable => {
-        const isUsed = mainUsageMap.get(variable.name);
-        console.log(`[Diagnostic] MAIN ${variable.name}: ${isUsed ? 'used' : 'unused'}`);
-        if (!isUsed) {
-          const diagnostic = new vscode.Diagnostic(
-            variable.range,
-            `未使用的变量 '${variable.name}'，建议移除该变量声明`,
-            vscode.DiagnosticSeverity.Warning
-          );
-          
-          diagnostic.source = 'Genero FGL';
-          diagnostic.code = 'unused-variable';
-          diagnostic.tags = [vscode.DiagnosticTag.Unnecessary];
-          
-          diagnostics.push(diagnostic);
+    try {
+      const config = vscode.workspace.getConfiguration('GeneroFGL');
+      const enabled = config.get('4gl.diagnostic.enable', true);
+      if (!enabled) { this.diagnosticCollection.clear(); return; }
+
+      const text = document.getText();
+      const diagnostics: vscode.Diagnostic[] = [];
+
+      const mainBlock = extractMainBlock(text);
+      if (mainBlock) {
+        const vars = parseDefineStatements(mainBlock.content, mainBlock.startLine, 'main');
+        const usage = analyzeVariableUsage(mainBlock.content, vars);
+        vars.forEach(v => { const used = usage.get(v.name); if (!used) {
+          const d = new vscode.Diagnostic(v.range, `未使用的變數 '${v.name}'`, vscode.DiagnosticSeverity.Warning);
+          d.source = 'Genero FGL'; d.code = 'unused-variable'; d.tags = [vscode.DiagnosticTag.Unnecessary]; diagnostics.push(d);
+        } });
+      }
+
+      // Detect GLOBALS blocks and do not emit unused-variable diagnostics for them
+      // because GLOBALS are intentionally global/shared and may be referenced elsewhere.
+      const lines = text.split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i].trim();
+        if (/^\s*GLOBALS\b/i.test(l)) {
+          let k = i + 1; while (k < lines.length && !/^\s*END\s+GLOBALS\b/i.test(stripInlineComment(lines[k]))) k++;
+          const block = lines.slice(i, Math.min(k, lines.length - 1) + 1).join('\n');
+          // parse to register but skip diagnostics
+          parseDefineStatements(block, i, 'global');
+          i = k;
         }
+      }
+
+      const funcs = extractFunctionBlocks(text);
+      funcs.forEach(fb => {
+        const sig = parseEnhancedFunctionSignature(fb.content);
+        const allParams = sig ? sig.allParameters : [];
+        const fvars = parseDefineStatements(fb.content, fb.startLine, 'function');
+        const localVars = fvars.filter(v => !allParams.includes(v.name));
+        const usage = analyzeVariableUsage(fb.content, localVars);
+        localVars.forEach(v => { const used = usage.get(v.name); if (!used) {
+          const d = new vscode.Diagnostic(v.range, `函式 '${fb.name}' 中未使用的變數 '${v.name}'`, vscode.DiagnosticSeverity.Warning);
+          d.source = 'Genero FGL'; d.code = 'unused-variable'; d.tags = [vscode.DiagnosticTag.Unnecessary]; diagnostics.push(d);
+        } });
       });
-    } else {
-      console.log(`[Diagnostic] No MAIN block found`);
+
+      this.diagnosticCollection.set(document.uri, diagnostics);
+    } catch (err) {
+      console.error('[Genero FGL] updateDiagnostics error', err);
+      this.diagnosticCollection.delete(document.uri);
     }
-    
-    // 处理 FUNCTION 块
-    const functionBlocks = extractFunctionBlocks(text);
-    console.log(`[Diagnostic] Found ${functionBlocks.length} functions`);
-    
-    functionBlocks.forEach(funcBlock => {
-      console.log(`[Diagnostic] Processing function ${funcBlock.name}`);
-      
-      // 使用增强的函数签名解析器，获取所有参数列表
-      const enhancedSignature = parseEnhancedFunctionSignature(funcBlock.content);
-      const allParameters = enhancedSignature ? enhancedSignature.allParameters : [];
-      console.log(`[Diagnostic] Function ${funcBlock.name} parameters: ${allParameters}`);
-      
-      // 解析函数中的所有变量定义
-      const allFuncVariables = parseDefineStatements(funcBlock.content, funcBlock.startLine, 'function');
-      console.log(`[Diagnostic] Function ${funcBlock.name} all variables: ${allFuncVariables.map(v => v.name)}`);
-      
-      // 过滤掉所有参数变量（括号内参数和 DEFINE 语句参数），只检查局部变量
-      const localVariables = allFuncVariables.filter(variable => 
-        !allParameters.includes(variable.name)
-      );
-      console.log(`[Diagnostic] Function ${funcBlock.name} local variables: ${localVariables.map(v => v.name)}`);
-      
-      // 分析局部变量的使用情况
-      const funcUsageMap = analyzeVariableUsage(funcBlock.content, localVariables);
-      
-      // 只为未使用的局部变量生成诊断信息
-      localVariables.forEach(variable => {
-        const isUsed = funcUsageMap.get(variable.name);
-        console.log(`[Diagnostic] Function ${funcBlock.name} variable ${variable.name}: ${isUsed ? 'used' : 'unused'}`);
-        if (!isUsed) {
-          const diagnostic = new vscode.Diagnostic(
-            variable.range,
-            `函数 '${funcBlock.name}' 中未使用的变量 '${variable.name}'，建议移除该变量声明`,
-            vscode.DiagnosticSeverity.Warning
-          );
-          
-          diagnostic.source = 'Genero FGL';
-          diagnostic.code = 'unused-variable';
-          diagnostic.tags = [vscode.DiagnosticTag.Unnecessary];
-          
-          diagnostics.push(diagnostic);
-        }
-      });
-    });
-    
-    console.log(`[Diagnostic] Generated ${diagnostics.length} diagnostics`);
-    this.diagnosticCollection.set(document.uri, diagnostics);
   }
-  
-  public clearDiagnostics(uri: vscode.Uri): void {
-    this.diagnosticCollection.delete(uri);
+  public clearDiagnostics(uri: vscode.Uri): void { this.diagnosticCollection.delete(uri); }
+  public dispose(): void { this.diagnosticCollection.dispose(); }
+}
+
+function isDiagnosticEnabled(): boolean { const cfg = vscode.workspace.getConfiguration('GeneroFGL'); return cfg.get('4gl.diagnostic.enable', true); }
+function getDiagnosticDelay(): number { const cfg = vscode.workspace.getConfiguration('GeneroFGL'); return cfg.get('4gl.diagnostic.delay', 500); }
+
+let diagnosticTimer: NodeJS.Timeout | undefined;
+
+// --- Definition provider -------------------------------------------------
+class FourGLDefinitionProvider implements vscode.DefinitionProvider {
+  public async provideDefinition(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.Location | null> {
+    const wr = document.getWordRangeAtPosition(position, /[A-Za-z0-9_\.]+/);
+    if (!wr) return null;
+    const word = document.getText(wr);
+
+    const local = this.findDefinitionInText(document.getText(), word, document.uri);
+    if (local) return local;
+
+    const files = await vscode.workspace.findFiles('**/*.4gl');
+    for (const f of files) {
+      if (f.toString() === document.uri.toString()) continue;
+      try {
+        const doc = await vscode.workspace.openTextDocument(f);
+        const def = this.findDefinitionInText(doc.getText(), word, f);
+        if (def) return def;
+      } catch { /* ignore */ }
+    }
+    return null;
   }
-  
-  public dispose(): void {
-    this.diagnosticCollection.dispose();
+
+  private findDefinitionInText(text: string, name: string, uri: vscode.Uri): vscode.Location | null {
+    const lines = text.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i].replace(/#.*/g, '').replace(/--.*$/, '').trim();
+      const mf = ln.match(REGEX_PATTERNS.FUNCTION); if (mf && mf[1].toLowerCase() === name.toLowerCase()) return new vscode.Location(uri, new vscode.Position(i, 0));
+      const mr = ln.match(REGEX_PATTERNS.REPORT); if (mr && mr[1].toLowerCase() === name.toLowerCase()) return new vscode.Location(uri, new vscode.Position(i, 0));
+    }
+    return null;
   }
 }
 
-// 配置读取函数
-function isDiagnosticEnabled(): boolean {
-  const config = vscode.workspace.getConfiguration('GeneroFGL');
-  return config.get('4gl.diagnostic.enable', true);
-}
+// --- Activation ----------------------------------------------------------
+export function activate(context: vscode.ExtensionContext) {
+  console.log('[Genero FGL] activating');
 
-function getDiagnosticDelay(): number {
-  const config = vscode.workspace.getConfiguration('GeneroFGL');
-  return config.get('4gl.diagnostic.delay', 500);
+  context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider({ language: '4gl' }, { provideDocumentSymbols(document: vscode.TextDocument) { return parseDocumentSymbols(document.getText()); } }));
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider({ language: '4gl' }, new FourGLDefinitionProvider()));
+
+  const diagProvider = new UnusedVariableDiagnosticProvider();
+  context.subscriptions.push(diagProvider);
+
+  const onChange = vscode.workspace.onDidChangeTextDocument(ev => {
+    if (ev.document.languageId !== '4gl') return;
+    if (!isDiagnosticEnabled()) return;
+    if (diagnosticTimer) clearTimeout(diagnosticTimer);
+    diagnosticTimer = setTimeout(() => diagProvider.updateDiagnostics(ev.document), getDiagnosticDelay());
+  });
+  context.subscriptions.push(onChange);
+
+  const onOpen = vscode.workspace.onDidOpenTextDocument(doc => { if (doc.languageId === '4gl' && isDiagnosticEnabled()) diagProvider.updateDiagnostics(doc); });
+  context.subscriptions.push(onOpen);
+
+  const cfg = vscode.workspace.onDidChangeConfiguration(ev => {
+    if (ev.affectsConfiguration('GeneroFGL.4gl.diagnostic')) {
+      vscode.workspace.textDocuments.forEach(d => { if (d.languageId === '4gl') { if (isDiagnosticEnabled()) diagProvider.updateDiagnostics(d); else diagProvider.clearDiagnostics(d.uri); } });
+    }
+  });
+  context.subscriptions.push(cfg);
+
+  // initial run
+  vscode.workspace.textDocuments.forEach(d => { if (d.languageId === '4gl' && isDiagnosticEnabled()) diagProvider.updateDiagnostics(d); });
+
+  context.subscriptions.push(vscode.commands.registerCommand('genero-fgl.runDiagnostics', () => {
+    const ae = vscode.window.activeTextEditor; if (ae && ae.document.languageId === '4gl') { diagProvider.updateDiagnostics(ae.document); vscode.window.showInformationMessage('已运行未使用变量诊断'); } else { vscode.window.showWarningMessage('请打开一个 .4gl 文件'); }
+  }));
+
+  console.log('[Genero FGL] activated');
 }
 
 export function deactivate() {}
