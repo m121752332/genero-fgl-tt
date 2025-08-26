@@ -50,6 +50,11 @@
                     "default": true,
                     "description": "Enable go to definition"
                 },
+                "GeneroFGL.4gl.breadcrumbs.enable": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable breadcrumbs navigation for 4GL files"
+                },
                 "GeneroFGL.fglcomp.executable": {
                     "type": "string",
                     "default": "fglcomp",

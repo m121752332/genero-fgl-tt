@@ -1,6 +1,6 @@
 # [English](/extension/README.md)｜[繁體中文](/extension/README_ZH.md)
 
-# Genero fglcomp/fglform 指令介面
+## Genero fglcomp/fglform 指令介面
 
 [![Marketplace Version](https://vsmarketplacebadges.dev/version-short/m121752332.genero-fgl.png)](https://marketplace.visualstudio.com/items?itemName=m121752332.genero-fgl)
 [![Downloads](https://vsmarketplacebadges.dev/downloads-short/m121752332.genero-fgl.png)](https://marketplace.visualstudio.com/items?itemName=m121752332.genero-fgl)
