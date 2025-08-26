@@ -2,6 +2,8 @@
 
 本文件定義 **Genero BDL / FGL** 程式碼的美化（Formatter / Beautifier）規範，作為開發人員與工具實作的統一依據。
 
+參考：[Genero BDL / FGL Code Formatter](https://4js.com/online_documentation/fjs-gst-manual-html/index.html#gst-topics/c_gst_preferences_code_editor_behavior_display.html) | [繁體中文說明](/extension/docs/FGL_preferences_CODE_EDITOR_BEHAVIOR_DISPLAY.md)
+
 ---
 
 ## 1. 縮排與排版規則（Indentation & Tabs）
@@ -9,7 +11,7 @@
 - **縮排寬度 (Tab size)**：`3` 空格  
 - **Tab 轉換**：所有 Tab 皆轉換為空格 (`Insert spaces for tab = true`)  
 - **智慧縮排 (Smart indent)**：依語法自動縮排  
-- **智慧刪除 (Smart backspace)**：刪除時以縮排單位運作  
+- **智慧刪除 (Smart backspace)**：刪除時以縮排單位運作
 - **智慧 Tab (Smart tab)**：補齊縮排至正確層級  
 - **行尾空白 (Strip trailing whitespaces)**：允許存在，不自動移除  
 

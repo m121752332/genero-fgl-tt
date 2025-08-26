@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { parseSymbols, Sym } from './parser';
 
 // Clean, single-file implementation for DocumentSymbols, DefinitionProvider
@@ -409,6 +411,32 @@ class FourGLDefinitionProvider implements vscode.DefinitionProvider {
 // --- Activation ----------------------------------------------------------
 export function activate(context: vscode.ExtensionContext) {
   console.log('[Genero FGL] activating');
+
+  // If the experimental language-server setting is enabled, check that
+  // a language server binary / script exists in the extension folder.
+  try {
+    const cfg = vscode.workspace.getConfiguration('GeneroFGL');
+    const lsEnabled = cfg.get('4gl.language-server.enable', false);
+    if (lsEnabled) {
+      const extRoot = context.extensionPath || '';
+      const candidates = [
+        path.join(extRoot, 'server'),
+        path.join(extRoot, 'server.js'),
+        path.join(extRoot, 'out', 'server.js'),
+        path.join(extRoot, 'dist', 'server.js'),
+        path.join(extRoot, 'bin', 'server'),
+        path.join(extRoot, 'bin', 'fgl-language-server')
+      ];
+      const found = candidates.find(p => p && fs.existsSync(p));
+      if (!found) {
+        vscode.window.showWarningMessage('Genero FGL: language server enabled but no server files found in the extension bundle. Language server features will be unavailable.');
+      } else {
+        console.log('[Genero FGL] language server candidate found at', found);
+      }
+    }
+  } catch (err) {
+    console.error('[Genero FGL] language-server check failed', err);
+  }
 
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider({ language: '4gl' }, { provideDocumentSymbols(document: vscode.TextDocument) { return parseDocumentSymbols(document.getText()); } }));
   context.subscriptions.push(vscode.languages.registerDefinitionProvider({ language: '4gl' }, new FourGLDefinitionProvider()));
