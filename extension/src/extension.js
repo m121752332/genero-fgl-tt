@@ -37,6 +37,8 @@ exports.parseDocumentSymbols = parseDocumentSymbols;
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const parser_1 = require("./parser");
 // --- Regex cache ----------------------------------------------------------
 const REGEX_PATTERNS = {
@@ -493,6 +495,33 @@ class FourGLDefinitionProvider {
 // --- Activation ----------------------------------------------------------
 function activate(context) {
     console.log('[Genero FGL] activating');
+    // If the experimental language-server setting is enabled, check that
+    // a language server binary / script exists in the extension folder.
+    try {
+        const cfg = vscode.workspace.getConfiguration('GeneroFGL');
+        const lsEnabled = cfg.get('4gl.language-server.enable', false);
+        if (lsEnabled) {
+            const extRoot = context.extensionPath || '';
+            const candidates = [
+                path.join(extRoot, 'server'),
+                path.join(extRoot, 'server.js'),
+                path.join(extRoot, 'out', 'server.js'),
+                path.join(extRoot, 'dist', 'server.js'),
+                path.join(extRoot, 'bin', 'server'),
+                path.join(extRoot, 'bin', 'fgl-language-server')
+            ];
+            const found = candidates.find(p => p && fs.existsSync(p));
+            if (!found) {
+                vscode.window.showWarningMessage('Genero FGL: language server enabled but no server files found in the extension bundle. Language server features will be unavailable.');
+            }
+            else {
+                console.log('[Genero FGL] language server candidate found at', found);
+            }
+        }
+    }
+    catch (err) {
+        console.error('[Genero FGL] language-server check failed', err);
+    }
     context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider({ language: '4gl' }, { provideDocumentSymbols(document) { return parseDocumentSymbols(document.getText()); } }));
     context.subscriptions.push(vscode.languages.registerDefinitionProvider({ language: '4gl' }, new FourGLDefinitionProvider()));
     const diagProvider = new UnusedVariableDiagnosticProvider();
