@@ -16,6 +16,7 @@ yarn-error.log
 
 # Packaging / build artifacts
 *.vsix
+*.zip
 .vscodeignore
 **/out/
 **/dist/

@@ -1,453 +1,453 @@
 {
-   "name": "genero-fgl",
-   "displayName": "Genero-FGL",
-   "icon": "images/tiptop.ico",
-   "description": "An essential tool designed to empower developers with a smooth and enjoyable experience when editing TIPTOP source code using Genero 4GL.",
-   "version": "0.1.8",
-   "publisher": "m121752332",
-   "repository": {
-      "type": "git",
-      "url": "https://github.com/m121752332/genero-fgl-tt.git"
-   },
-   "engines": {
-      "vscode": "^1.6.0"
-   },
-   "categories": [
-      "Other",
-      "Education",
-      "Programming Languages",
-      "Themes",
-      "Formatters",
-      "Linters",
-      "Debuggers"
-   ],
-   "activationEvents": [
-      "onStartupFinished"
-   ],
-   "main": "./out/main.js",
-   "contributes": {
-      "configuration": {
-         "type": "object",
-         "title": "Genero-FGL",
-         "properties": {
-            "GeneroFGL.4gl.completion.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable completion"
-            },
-            "GeneroFGL.4gl.diagnostic.delay": {
-               "type": "number",
-               "default": 500,
-               "description": "The delay after which diagnostic starts (in millisecond)"
-            },
-            "GeneroFGL.4gl.diagnostic.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable diagnostic"
-            },
-            "GeneroFGL.4gl.format.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable formatting"
-            },
-            "GeneroFGL.4gl.format.functions.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable formatting for FUNCTION blocks (functions-only mode)"
-            },
-            "GeneroFGL.4gl.format.indent.useTabs": {
-               "type": "boolean",
-               "default": false,
-               "description": "If true, use tabs for indentation; otherwise use spaces."
-            },
-            "GeneroFGL.4gl.format.indent.size": {
-               "type": "number",
-               "default": 3,
-               "minimum": 0,
-               "description": "Number of spaces to use for indentation when useTabs is false."
-            },
-            "GeneroFGL.4gl.format.lineLength.max": {
-               "type": "number",
-               "default": 120,
-               "description": "Preferred maximum line length for wrapping/formatting hints."
-            },
-            "GeneroFGL.4gl.format.comments.style": {
-               "type": "string",
-               "enum": [
-                  "preserve",
-                  "dash",
-                  "hash"
-               ],
-               "default": "preserve",
-               "description": "How to normalize single-line comments: preserve, dash (--) or hash (#)."
-            },
-            "GeneroFGL.4gl.format.comments.replaceInline": {
-               "type": "boolean",
-               "default": false,
-               "description": "Whether to also normalize inline comments (to comments.style)."
-            },
-            "GeneroFGL.4gl.format.onSave": {
-               "type": "boolean",
-               "default": false,
-               "description": "If true, format document on save. Large files may disable this by default."
-            },
-            "GeneroFGL.4gl.format.onlyChanges": {
-               "type": "boolean",
-               "default": false,
-               "description": "If true, attempt to only format changed ranges (reduce edit size)."
-            },
-            "GeneroFGL.4gl.format.keywords.uppercase.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "If true, normalize keywords to uppercase (only affects keyword tokens)."
-            },
-            "GeneroFGL.4gl.definition.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable go to definition"
-            },
-            "GeneroFGL.4gl.breadcrumbs.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable breadcrumbs navigation for 4GL files"
-            },
-            "GeneroFGL.fglcomp.executable": {
-               "type": "string",
-               "default": "fglcomp",
-               "description": "Fglcomp command or the path to the fglcomp executable"
-            },
-            "GeneroFGL.fglcomp.flags": {
-               "type": "array",
-               "items": {
-                  "type": "string"
-               },
-               "default": [],
-               "description": "Compiler options for .4gl (e.g. [\"-DFOO -pauto\"])"
-            },
-            "GeneroFGL.fglform.executable": {
-               "type": "string",
-               "default": "fglform",
-               "description": "Fglform command or the path to the fglform executable"
-            },
-            "GeneroFGL.fglform.flags": {
-               "type": "array",
-               "items": {
-                  "type": "string"
-               },
-               "default": [],
-               "description": "Compiler options for .per (e.g. [\"-DFOO -pauto\"])"
-            },
-            "GeneroFGL.per.completion.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable completion"
-            },
-            "GeneroFGL.per.diagnostic.delay": {
-               "type": "number",
-               "default": 500,
-               "description": "The delay after which diagnostic starts (in millisecond)"
-            },
-            "GeneroFGL.per.diagnostic.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable diagnostic"
-            },
-            "GeneroFGL.per.format.enable": {
-               "type": "boolean",
-               "default": true,
-               "description": "Enable formatting"
-            },
-            "GeneroFGL.4gl.language-server.enable": {
-               "type": "boolean",
-               "default": false,
-               "description": "Enable the 4gl language server - experimental"
-            },
-            "4gl.trace.server": {
-               "type": "string",
-               "enum": [
-                  "off",
-                  "messages",
-                  "verbose"
-               ],
-               "default": "off",
-               "description": "Trace the communication between VS Code and the 4gl language server."
-            }
-         }
+  "name": "genero-fgl",
+  "displayName": "Genero-FGL",
+  "icon": "images/tiptop.ico",
+  "description": "An essential tool designed to empower developers with a smooth and enjoyable experience when editing TIPTOP source code using Genero 4GL.",
+  "version": "0.1.8",
+  "publisher": "m121752332",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/m121752332/genero-fgl-tt.git"
+  },
+  "engines": {
+    "vscode": "^1.6.0"
+  },
+  "categories": [
+    "Other",
+    "Education",
+    "Programming Languages",
+    "Themes",
+    "Formatters",
+    "Linters",
+    "Debuggers"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/main.js",
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Genero-FGL",
+      "properties": {
+        "GeneroFGL.4gl.completion.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable completion"
+        },
+        "GeneroFGL.4gl.diagnostic.delay": {
+          "type": "number",
+          "default": 500,
+          "description": "The delay after which diagnostic starts (in millisecond)"
+        },
+        "GeneroFGL.4gl.diagnostic.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable diagnostic"
+        },
+        "GeneroFGL.4gl.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable formatting"
+        },
+        "GeneroFGL.4gl.format.functions.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable formatting for FUNCTION blocks (functions-only mode)"
+        },
+        "GeneroFGL.4gl.format.indent.useTabs": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, use tabs for indentation; otherwise use spaces."
+        },
+        "GeneroFGL.4gl.format.indent.size": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "description": "Number of spaces to use for indentation when useTabs is false."
+        },
+        "GeneroFGL.4gl.format.lineLength.max": {
+          "type": "number",
+          "default": 120,
+          "description": "Preferred maximum line length for wrapping/formatting hints."
+        },
+        "GeneroFGL.4gl.format.comments.style": {
+          "type": "string",
+          "enum": [
+            "preserve",
+            "dash",
+            "hash"
+          ],
+          "default": "preserve",
+          "description": "How to normalize single-line comments: preserve, dash (--) or hash (#)."
+        },
+        "GeneroFGL.4gl.format.comments.replaceInline": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to also normalize inline comments (to comments.style)."
+        },
+        "GeneroFGL.4gl.format.onSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, format document on save. Large files may disable this by default."
+        },
+        "GeneroFGL.4gl.format.onlyChanges": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, attempt to only format changed ranges (reduce edit size)."
+        },
+        "GeneroFGL.4gl.format.keywords.uppercase.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, normalize keywords to uppercase (only affects keyword tokens)."
+        },
+        "GeneroFGL.4gl.definition.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable go to definition"
+        },
+        "GeneroFGL.4gl.breadcrumbs.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable breadcrumbs navigation for 4GL files"
+        },
+        "GeneroFGL.fglcomp.executable": {
+          "type": "string",
+          "default": "fglcomp",
+          "description": "Fglcomp command or the path to the fglcomp executable"
+        },
+        "GeneroFGL.fglcomp.flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Compiler options for .4gl (e.g. [\"-DFOO -pauto\"])"
+        },
+        "GeneroFGL.fglform.executable": {
+          "type": "string",
+          "default": "fglform",
+          "description": "Fglform command or the path to the fglform executable"
+        },
+        "GeneroFGL.fglform.flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Compiler options for .per (e.g. [\"-DFOO -pauto\"])"
+        },
+        "GeneroFGL.per.completion.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable completion"
+        },
+        "GeneroFGL.per.diagnostic.delay": {
+          "type": "number",
+          "default": 500,
+          "description": "The delay after which diagnostic starts (in millisecond)"
+        },
+        "GeneroFGL.per.diagnostic.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable diagnostic"
+        },
+        "GeneroFGL.per.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable formatting"
+        },
+        "GeneroFGL.4gl.language-server.enable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the 4gl language server - experimental"
+        },
+        "4gl.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace the communication between VS Code and the 4gl language server."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "4gl",
+        "aliases": [
+          "Genero 4gl"
+        ],
+        "extensions": [
+          ".4gl",
+          ".4GL",
+          ".global",
+          ".GLOBAL"
+        ],
+        "configuration": "./language-configuration.json"
       },
-      "languages": [
-         {
-            "id": "4gl",
-            "aliases": [
-               "Genero 4gl"
+      {
+        "id": "per",
+        "aliases": [
+          "Genero per"
+        ],
+        "extensions": [
+          ".per",
+          ".PER"
+        ],
+        "configuration": "./per-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "4gl",
+        "scopeName": "source.4gl",
+        "path": "./syntaxes/4gl.tmLanguage.json"
+      },
+      {
+        "language": "per",
+        "scopeName": "source.per",
+        "path": "./syntaxes/per.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "genero-fgl.runDiagnostics",
+        "title": "運行未使用變數診斷",
+        "category": "Genero FGL"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "4gl"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "fgldb-dap",
+        "label": "Debug with fgldb-dap",
+        "languages": [
+          "4gl"
+        ],
+        "variables": {
+          "pickProcess": "extension.pickFglrunProcess"
+        },
+        "windows": {
+          "program": "\\\\.\\C:\\Windows\\System32\\cmd.exe",
+          "args": [
+            "/c",
+            "fglrun",
+            "--da-debugger"
+          ]
+        },
+        "osx": {
+          "program": "/usr/bin/env",
+          "args": [
+            "fglrun",
+            "--da-debugger"
+          ]
+        },
+        "linux": {
+          "program": "/usr/bin/env",
+          "args": [
+            "fglrun",
+            "--da-debugger"
+          ]
+        },
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
             ],
-            "extensions": [
-               ".4gl",
-               ".4GL",
-               ".global",
-               ".GLOBAL"
-            ],
-            "configuration": "./language-configuration.json"
-         },
-         {
-            "id": "per",
-            "aliases": [
-               "Genero per"
-            ],
-            "extensions": [
-               ".per",
-               ".PER"
-            ],
-            "configuration": "./per-language-configuration.json"
-         }
-      ],
-      "grammars": [
-         {
-            "language": "4gl",
-            "scopeName": "source.4gl",
-            "path": "./syntaxes/4gl.tmLanguage.json"
-         },
-         {
-            "language": "per",
-            "scopeName": "source.per",
-            "path": "./syntaxes/per.tmLanguage.json"
-         }
-      ],
-      "commands": [
-         {
-            "command": "genero-fgl.runDiagnostics",
-            "title": "運行未使用變數診斷",
-            "category": "Genero FGL"
-         }
-      ],
-      "breakpoints": [
-         {
-            "language": "4gl"
-         }
-      ],
-      "debuggers": [
-         {
-            "type": "fgldb-dap",
-            "label": "Debug with fgldb-dap",
-            "languages": [
-               "4gl"
-            ],
-            "variables": {
-               "pickProcess": "extension.pickFglrunProcess"
-            },
-            "windows": {
-               "program": "\\\\.\\C:\\Windows\\System32\\cmd.exe",
-               "args": [
-                  "/c",
-                  "fglrun",
-                  "--da-debugger"
-               ]
-            },
-            "osx": {
-               "program": "/usr/bin/env",
-               "args": [
-                  "fglrun",
-                  "--da-debugger"
-               ]
-            },
-            "linux": {
-               "program": "/usr/bin/env",
-               "args": [
-                  "fglrun",
-                  "--da-debugger"
-               ]
-            },
-            "configurationAttributes": {
-               "launch": {
-                  "required": [
-                     "program"
-                  ],
-                  "properties": {
-                     "program": {
-                        "type": "string",
-                        "description": "The name of the fgl program to debug."
-                     },
-                     "args": {
-                        "type": "array",
-                        "items": {
-                           "type": "string"
-                        },
-                        "description": "Program args."
-                     },
-                     "cwd": {
-                        "type": "string",
-                        "default": "${workspaceFolder}"
-                     },
-                     "stopAtEntry": {
-                        "type": "boolean",
-                        "description": "Stop at the entrypoint (MAIN) of the target",
-                        "default": true
-                     },
-                     "externalConsole": {
-                        "type": "boolean",
-                        "description": "Use external console",
-                        "default": false
-                     },
-                     "console": {
-                        "type": "string",
-                        "enum": [
-                           "internalConsole",
-                           "integratedTerminal",
-                           "externalTerminal",
-                           "newExternalWindow"
-                        ],
-                        "enumDescriptions": [
-                           "internalConsole",
-                           "integratedTerminal",
-                           "externalTerminal",
-                           "newExternalWindow"
-                        ],
-                        "description": "run in internalConsole, integratedTerminal, externalTerminal or newExternalWindow",
-                        "default": "internalConsole"
-                     }
-                  }
-               },
-               "attach": {
-                  "required": [
-                     "processId"
-                  ],
-                  "properties": {
-                     "processId": {
-                        "anyOf": [
-                           {
-                              "type": "string",
-                              "default": "${command:pickProcess}"
-                           },
-                           {
-                              "type": "integer",
-                              "default": 0
-                           }
-                        ]
-                     }
-                  }
-               }
-            },
-            "initialConfigurations": [
-               {
-                  "type": "fgldb-dap",
-                  "request": "launch",
-                  "name": "(4gl) Launch",
-                  "program": "${workspaceFolder}/${fileBasenameNoExtension}",
-                  "args": [],
-                  "stopAtEntry": true,
-                  "externalConsole": false,
-                  "cwd": "${workspaceFolder}"
-               }
-            ],
-            "configurationSnippets": [
-               {
-                  "label": "GeneroFgl Debug: Launch",
-                  "description": "A new configuration for debugging a Genero-Fgl program.",
-                  "body": {
-                     "type": "fgldb-dap",
-                     "request": "launch",
-                     "name": "(4gl) Launch",
-                     "program": "^\"${1:\\${workspaceFolder}}/${2:\\${fileBasenameNoExtension}}\"",
-                     "args": "^${3:[]}",
-                     "stopAtEntry": "^${4:true}",
-                     "externalConsole": "^${5:false}",
-                     "cwd": "^\"${6:\\${workspaceFolder}}\""
-                  }
-               },
-               {
-                  "label": "GeneroFgl Debug: Attach",
-                  "description": "A new configuration for debugging a Genero-Fgl program.",
-                  "body": {
-                     "type": "fgldb-dap",
-                     "request": "attach",
-                     "name": "(4gl) Attach",
-                     "processId": "^\"${1:\\${command:pickProcess}}\""
-                  }
-               }
-            ]
-         }
-      ],
-      "problemMatchers": [
-         {
-            "name": "fglcomp",
-            "owner": "4gl",
-            "fileLocation": "autoDetect",
-            "pattern": {
-               "regexp": "^(.*):(\\d+):(\\d+):(\\d+):(\\d+):(warning|error):(.*)$",
-               "file": 1,
-               "line": 2,
-               "column": 3,
-               "severity": 6,
-               "message": 7
-            }
-         }
-      ],
-      "taskDefinitions": [
-         {
-            "type": "genero-fgl",
             "properties": {
-               "label": {
-                  "type": "string",
-                  "description": "The name of the task."
-               },
-               "command": {
-                  "type": "string",
-                  "default": "fglcomp",
-                  "description": "The path to fglcomp/fglform"
-               },
-               "args": {
-                  "type": "array",
-                  "description": "arguments to pass to the fglcomp/fglform command (including the build target)",
-                  "items": {
-                     "type": "string"
-                  }
-               },
-               "options": {
-                  "type": "object",
-                  "default": {
-                     "cwd": "${workspaceFolder}"
-                  }
-               },
-               "detail": {
+              "program": {
+                "type": "string",
+                "description": "The name of the fgl program to debug."
+              },
+              "args": {
+                "type": "array",
+                "items": {
                   "type": "string"
-               }
+                },
+                "description": "Program args."
+              },
+              "cwd": {
+                "type": "string",
+                "default": "${workspaceFolder}"
+              },
+              "stopAtEntry": {
+                "type": "boolean",
+                "description": "Stop at the entrypoint (MAIN) of the target",
+                "default": true
+              },
+              "externalConsole": {
+                "type": "boolean",
+                "description": "Use external console",
+                "default": false
+              },
+              "console": {
+                "type": "string",
+                "enum": [
+                  "internalConsole",
+                  "integratedTerminal",
+                  "externalTerminal",
+                  "newExternalWindow"
+                ],
+                "enumDescriptions": [
+                  "internalConsole",
+                  "integratedTerminal",
+                  "externalTerminal",
+                  "newExternalWindow"
+                ],
+                "description": "run in internalConsole, integratedTerminal, externalTerminal or newExternalWindow",
+                "default": "internalConsole"
+              }
             }
-         }
-      ]
-   },
-   "scripts": {
-      "clean": "rm -rf out && rm -f *.vsix",
-      "compile": "tsc -b",
-      "tsc-build": "tsc --build",
-      "lint": "eslint -c .eslintrc.json --ext .ts src",
-      "package": "vsce package",
-      "publish": "vsce publish",
-      "vscode:prepublish": "npm run esbuild",
-      "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
-      "esbuild": "npm run esbuild-base -- --sourcemap",
-      "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
-      "test-compile": "tsc -p ./",
-      "test": "mocha -r ts-node/register --recursive unittests --reporter spec",
-      "build-and-package": "node ./scripts/build-and-package.js",
-      "install-vsix": "node ./scripts/install-vsix.js",
-      "build-install": "npm run build-and-package && npm run install-vsix"
-   },
-   "devDependencies": {
-      "@types/node": "*",
-      "@types/vscode": "*",
-      "@typescript-eslint/eslint-plugin": "^8.40.0",
-      "@typescript-eslint/parser": "^8.40.0",
-      "esbuild": "^0.25.9",
-      "eslint": "^9.33.0",
-      "@vscode/vsce": "^3.4.0",
-      "package": "^1.0.1",
-      "typescript": "^5.9.2",
-      "mocha": "^10.2.0",
-      "ts-node": "^10.9.1",
-      "@types/mocha": "^10.0.1"
-   },
-   "dependencies": {
-      "vscode-languageclient": "8.1.0",
-      "@types/vscode": "^1.72.0"
-   },
-   "dummy": {}
+          },
+          "attach": {
+            "required": [
+              "processId"
+            ],
+            "properties": {
+              "processId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "default": "${command:pickProcess}"
+                  },
+                  {
+                    "type": "integer",
+                    "default": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "fgldb-dap",
+            "request": "launch",
+            "name": "(4gl) Launch",
+            "program": "${workspaceFolder}/${fileBasenameNoExtension}",
+            "args": [],
+            "stopAtEntry": true,
+            "externalConsole": false,
+            "cwd": "${workspaceFolder}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "GeneroFgl Debug: Launch",
+            "description": "A new configuration for debugging a Genero-Fgl program.",
+            "body": {
+              "type": "fgldb-dap",
+              "request": "launch",
+              "name": "(4gl) Launch",
+              "program": "^\"${1:\\${workspaceFolder}}/${2:\\${fileBasenameNoExtension}}\"",
+              "args": "^${3:[]}",
+              "stopAtEntry": "^${4:true}",
+              "externalConsole": "^${5:false}",
+              "cwd": "^\"${6:\\${workspaceFolder}}\""
+            }
+          },
+          {
+            "label": "GeneroFgl Debug: Attach",
+            "description": "A new configuration for debugging a Genero-Fgl program.",
+            "body": {
+              "type": "fgldb-dap",
+              "request": "attach",
+              "name": "(4gl) Attach",
+              "processId": "^\"${1:\\${command:pickProcess}}\""
+            }
+          }
+        ]
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "fglcomp",
+        "owner": "4gl",
+        "fileLocation": "autoDetect",
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+):(\\d+):(\\d+):(warning|error):(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 6,
+          "message": 7
+        }
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "genero-fgl",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "The name of the task."
+          },
+          "command": {
+            "type": "string",
+            "default": "fglcomp",
+            "description": "The path to fglcomp/fglform"
+          },
+          "args": {
+            "type": "array",
+            "description": "arguments to pass to the fglcomp/fglform command (including the build target)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "options": {
+            "type": "object",
+            "default": {
+              "cwd": "${workspaceFolder}"
+            }
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "clean": "rm -rf out && rm -f *.vsix",
+    "compile": "tsc -b",
+    "tsc-build": "tsc --build",
+    "lint": "eslint -c .eslintrc.json --ext .ts src",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "vscode:prepublish": "npm run esbuild",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
+    "esbuild": "npm run esbuild-base -- --sourcemap",
+    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "test-compile": "tsc -p ./",
+    "test": "mocha -r ts-node/register --recursive unittests --reporter spec",
+    "build-and-package": "node ./scripts/build-and-package.js",
+    "install-vsix": "node ./scripts/install-vsix.js",
+    "build-install": "npm run build-and-package && npm run install-vsix"
+  },
+  "devDependencies": {
+    "@types/node": "*",
+    "@types/vscode": "*",
+    "@typescript-eslint/eslint-plugin": "^8.40.0",
+    "@typescript-eslint/parser": "^8.40.0",
+    "esbuild": "^0.25.9",
+    "eslint": "^9.33.0",
+    "@vscode/vsce": "^3.4.0",
+    "package": "^1.0.1",
+    "typescript": "^5.9.2",
+    "mocha": "^10.2.0",
+    "ts-node": "^10.9.1",
+    "@types/mocha": "^10.0.1"
+  },
+  "dependencies": {
+    "vscode-languageclient": "8.1.0",
+    "@types/vscode": "^1.72.0"
+  },
+  "dummy": {}
 }
