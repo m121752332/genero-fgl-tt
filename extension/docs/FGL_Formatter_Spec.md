@@ -29,10 +29,10 @@
   "GeneroFGL.4gl.format.indent.size": 3,
   "GeneroFGL.4gl.format.lineLength.max": 120,
   "GeneroFGL.4gl.format.comments.style": "preserve",
-  "GeneroFGL.4gl.format.define.splitter.enable": false,
   "GeneroFGL.4gl.format.comments.replaceInline": false,
   "GeneroFGL.4gl.format.onSave": false,
   "GeneroFGL.4gl.format.onlyChanges": false,
+  // `define.splitter` setting removed from extension (feature now internal)
   "GeneroFGL.4gl.format.keywords.uppercase.enable": true
 }
 ```
@@ -116,60 +116,9 @@ END FUNCTION
 
 注意：要能處理巢狀 function（若語言允許）或類似結構，也要能處理缺少 `END` 的不完整程式（保守處理）。
 
-## DEFINE 分割器（設定：`GeneroFGL.4gl.format.define.splitter.enable`）
+## DEFINE 分割器（已移除）
 
-- 型別：boolean
-- 預設：false
-- 作用：當啟用時，將把使用逗號分隔在同一個 `DEFINE` 宣告中的多個變數，展開為多個獨立的 `DEFINE` 宣告（保留型別、註解與縮排）。此功能針對非 RECORD 的 `DEFINE` 行；若 `DEFINE` 為 `RECORD` 宣告的欄位（在 `DEFINE ... RECORD ... END RECORD` 內），則不會把欄位拆成獨立的 `DEFINE`（保留 RECORD 結構）。
-
-範例（原始）：
-
-```4gl
-DEFINE yy               LIKE imk_file.imk05,
-       mm               LIKE imk_file.imk06,
-       next_compute     LIKE type_file.chr1,    #No.FUN-690026 VARCHAR(1)
-       sw               LIKE type_file.chr1,    #NO.FUN-5C0001 ADD  #No.FUN-690026 VARCHAR(1)
-       dc               LIKE type_file.chr1,    #FUN-C40088
-       tlf0607_flag     LIKE type_file.chr1,    #No.FUN-690026 VARCHAR(1)
-       g_sql            string,                 #No.FUN-550025 #No.FUN-580092 HCN
-       g_wc             string,                 #No.FUN-580092 HCN
-       g_wc1            string,                 #No.FUN-550025 #No.FUN-580092 HCN
-       g_wc2            string                 #No.MOD-650067
-```
-
-啟用後（期望輸出）：
-
-```4gl
-DEFINE yy               LIKE imk_file.imk05
-DEFINE mm               LIKE imk_file.imk06
-DEFINE next_compute     LIKE type_file.chr1    #No.FUN-690026 VARCHAR(1)
-DEFINE sw               LIKE type_file.chr1    #NO.FUN-5C0001 ADD  #No.FUN-690026 VARCHAR(1)
-DEFINE dc               LIKE type_file.chr1    #FUN-C40088
-DEFINE tlf0607_flag     LIKE type_file.chr1    #No.FUN-690026 VARCHAR(1)
-DEFINE g_sql            string                 #No.FUN-550025 #No.FUN-580092 HCN
-DEFINE g_wc             string                 #No.FUN-580092 HCN
-DEFINE g_wc1            string                 #No.FUN-550025 #No.FUN-580092 HCN
-DEFINE g_wc2            string                 #No.MOD-650067
-```
-
-範例（對 RECORD，不拆分成多個 `DEFINE`）：
-
-原始：
-
-```4gl
-DEFINE g_imk RECORD
-             imk01      LIKE imk_file.imk01,
-             imk02      LIKE imk_file.imk02,
-             imk03      LIKE imk_file.imk03
-             END RECORD
-```
-
-啟用分割器時：保留原 RECORD 結構（不產生多個 `DEFINE g_imk`）。
-
-實作注意：
-
-- 先 tokenise 並辨認 `DEFINE` 宣告範圍；需忽略字串與註解中的逗號。
-- 辨識是否為 RECORD：若 `DEFINE` 後緊接 `RECORD`（或在同一宣告中含 `RECORD`），不進行拆分。
+此專案原先提供 `define.splitter` 功能，用以將多變數 `DEFINE` 拆分為多行獨立 `DEFINE`；該設定已從 extension 設定中移除，功能改為內部控制或停用。如需此行為，請參考 formatter 實作中保留的拆分邏輯（內部函式 `splitDefineLines` / `splitDefineLinesFallback`），或與維護者討論重新公開設定的方案。
 
 ## 要求清單（Checklist）
 
@@ -188,29 +137,16 @@ DEFINE g_imk RECORD
 
 注意：處理不完整的程式（缺少 END）時應採保守策略，避免移動或重排 token；支援巢狀結構（若語言允許）。
 
-## DEFINE 分割器（`GeneroFGL.4gl.format.define.splitter.enable`）
-
-- 型別：boolean，預設 false（opt-in）。
-- 功能：將 single-line 或 multi-variable `DEFINE` 宣告拆成數個單一 `DEFINE` 行（僅針對非 RECORD 宣告）。
-
-實作重點：
-
-- 先 tokenise 並辨認完整 `DEFINE` 宣告（忽略字串與註解中的逗號），確認是否為 RECORD。
-- 若非 RECORD，拆分每個變數為獨立 `DEFINE`，保留行尾註解與縮排風格。
-- RECORD 型態的 `DEFINE`（例如 `DEFINE g_imk RECORD ... END RECORD`）不拆分。
-
-範例請參照本專案原規格中的實例以便驗證。
-
 ## 註解替換規則
 
 - `preserve`：保留原註解標記與樣式（保守）。
-- `dash`：將單行註解標記（例如 `#`、`//`）改為 `--`。
+- `dash`：將單行註解標記（例如 `#`）改為 `--`。
 - `hash`：將單行註解標記改為 `#`。
 - `replaceInline` 控制是否也替換行內註解（預設 false）。
 
 實作重點：
 
-- 僅處理單行註解標記（`#`、`--`、`//`）；不要改變 block comment `{ ... }` 內容。
+- 僅處理單行註解標記（`#`、`--`）；不要改變 block comment `{ ... }` 內容。
 - 逐行掃描並使用狀態機判斷是否在字串或 block-comment 內；只有在 code 範圍內的註解標記才會被轉換。
 
 建議額外命令：`genero-fgl.format.normalizeComments`（repository-wide 正規化，需使用者主動執行）。

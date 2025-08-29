@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseSymbols, Sym } from './parser';
+import * as formatter from './formatter';
 
 // Clean, single-file implementation for DocumentSymbols, DefinitionProvider
 // and unused-variable diagnostics for Genero 4GL.
@@ -440,6 +441,119 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider({ language: '4gl' }, { provideDocumentSymbols(document: vscode.TextDocument) { return parseDocumentSymbols(document.getText()); } }));
   context.subscriptions.push(vscode.languages.registerDefinitionProvider({ language: '4gl' }, new FourGLDefinitionProvider()));
+
+  // Register formatting providers
+  const docFormatter: vscode.DocumentFormattingEditProvider = {
+    provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
+      try {
+        console.log('[Genero FGL] provideDocumentFormattingEdits called for', document.uri.toString());
+        const cfg = vscode.workspace.getConfiguration('GeneroFGL');
+        const fmtEnabled = cfg.get('4gl.format.enable', true);
+        if (!fmtEnabled) return [];
+        const options = {
+          commentsStyle: cfg.get('4gl.format.comments.style', 'preserve'),
+          replaceInline: cfg.get('4gl.format.comments.replaceInline', false),
+          keywordsUppercase: cfg.get('4gl.format.keywords.uppercase.enable', true),
+          lineLengthMax: cfg.get('4gl.format.lineLength.max', 120),
+          indent: {
+            useTabs: cfg.get('4gl.format.indent.useTabs', false),
+            size: cfg.get('4gl.format.indent.size', 3)
+          }
+        };
+        console.log('[Genero FGL] formatting options =', JSON.stringify(options));
+        const full = document.getText();
+        const formatted = formatter.formatText(full, options);
+        // Avoid huge logs: show a short preview plus lengths
+        if (process && process.stdout && process.env && process.env.FGL_FMT_DEBUG) {
+          console.log('[Genero FGL] formatted length=', formatted.length, 'original length=', full.length);
+          console.log('[Genero FGL] formatted preview:\n', formatted.split('\n').slice(0, 40).join('\n'));
+        } else {
+          const preview = formatted.split('\n').slice(0, 20).join('\n');
+          console.log('[Genero FGL] formatted preview (truncated):\n', preview);
+        }
+        if (formatted === full) { console.log('[Genero FGL] format produced no changes'); return []; }
+        const fullRange = new vscode.Range(0, 0, document.lineCount - 1, document.lineAt(document.lineCount - 1).range.end.character);
+        return [vscode.TextEdit.replace(fullRange, formatted)];
+      } catch (err) {
+        console.error('[Genero FGL] document format error', err);
+        return [];
+      }
+    }
+  };
+  context.subscriptions.push(vscode.languages.registerDocumentFormattingEditProvider({ language: '4gl' }, docFormatter));
+
+  const rangeFormatter: vscode.DocumentRangeFormattingEditProvider = {
+    provideDocumentRangeFormattingEdits(document: vscode.TextDocument, range: vscode.Range): vscode.TextEdit[] {
+      try {
+        console.log('[Genero FGL] provideDocumentRangeFormattingEdits called for', document.uri.toString(), 'range=', range.start.line, '-', range.end.line);
+        const cfg = vscode.workspace.getConfiguration('GeneroFGL');
+        const fmtEnabled = cfg.get('4gl.format.enable', true);
+        if (!fmtEnabled) return [];
+        const options = {
+          commentsStyle: cfg.get('4gl.format.comments.style', 'preserve'),
+          replaceInline: cfg.get('4gl.format.comments.replaceInline', false),
+          keywordsUppercase: cfg.get('4gl.format.keywords.uppercase.enable', true),
+          lineLengthMax: cfg.get('4gl.format.lineLength.max', 120),
+          indent: {
+            useTabs: cfg.get('4gl.format.indent.useTabs', false),
+            size: cfg.get('4gl.format.indent.size', 3)
+          }
+        };
+        console.log('[Genero FGL] range formatting options =', JSON.stringify(options));
+        const text = document.getText(range);
+        const formatted = formatter.formatText(text, options);
+        console.log('[Genero FGL] range formatted preview (truncated):\n', formatted.split('\n').slice(0, 20).join('\n'));
+        if (formatted === text) { console.log('[Genero FGL] range format produced no changes'); return []; }
+        return [vscode.TextEdit.replace(range, formatted)];
+      } catch (err) { 
+        console.error('[Genero FGL] range format error', err); return []; 
+      }
+    }
+  };
+  context.subscriptions.push(vscode.languages.registerDocumentRangeFormattingEditProvider({ language: '4gl' }, rangeFormatter));
+
+  // Commands for formatting
+  context.subscriptions.push(vscode.commands.registerCommand('genero-fgl.format.document', async () => {
+    const ae = vscode.window.activeTextEditor; if (!ae || ae.document.languageId !== '4gl') { vscode.window.showWarningMessage('請在 .4gl 檔案中執行'); return; }
+  console.log('[Genero FGL] command genero-fgl.format.document invoked, active document=', ae.document.uri.toString());
+    const cfg = vscode.workspace.getConfiguration('GeneroFGL');
+    console.log('[Genero FGL] command formatting options =', JSON.stringify({
+      commentsStyle: cfg.get('4gl.format.comments.style', 'preserve'),
+      replaceInline: cfg.get('4gl.format.comments.replaceInline', false),
+      keywordsUppercase: cfg.get('4gl.format.keywords.uppercase.enable', true),
+      lineLengthMax: cfg.get('4gl.format.lineLength.max', 120)
+    }));
+    await vscode.commands.executeCommand('editor.action.formatDocument');
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('genero-fgl.format.function', async (args?: { range?: vscode.Range }) => {
+    const ae = vscode.window.activeTextEditor; if (!ae || ae.document.languageId !== '4gl') { vscode.window.showWarningMessage('請在 .4gl 檔案中執行'); return; }
+  console.log('[Genero FGL] command genero-fgl.format.function invoked, active document=', ae.document.uri.toString());
+  const cfgCmd = vscode.workspace.getConfiguration('GeneroFGL');
+  console.log('[Genero FGL] command function-format options =', JSON.stringify({
+    commentsStyle: cfgCmd.get('4gl.format.comments.style', 'preserve'),
+    replaceInline: cfgCmd.get('4gl.format.comments.replaceInline', false),
+    keywordsUppercase: cfgCmd.get('4gl.format.keywords.uppercase.enable', true),
+    lineLengthMax: cfgCmd.get('4gl.format.lineLength.max', 120)
+  }));
+  const cfg = vscode.workspace.getConfiguration('GeneroFGL');
+  const functionsEnabled = cfg.get('4gl.format.functions.enable', true);
+  const fmtEnabled = cfg.get('4gl.format.enable', true);
+  if (!fmtEnabled) { vscode.window.showWarningMessage('Formatting is disabled in settings'); return; }
+  if (!functionsEnabled) { vscode.window.showWarningMessage('Function-level formatting is disabled in settings'); return; }
+    // if args.range provided, format that range; else attempt to find function at cursor
+    let range = args && args.range;
+    if (!range) {
+      const pos = ae.selection.active;
+      // naive: find surrounding FUNCTION ... END FUNCTION
+      const text = ae.document.getText();
+      const blocks = extractFunctionBlocks(text);
+      const found = blocks.find(b => pos.line >= b.startLine && pos.line <= b.endLine);
+      if (!found) { vscode.window.showWarningMessage('找不到函式區塊'); return; }
+      range = new vscode.Range(found.startLine, 0, found.endLine, ae.document.lineAt(found.endLine).range.end.character);
+    }
+    await vscode.commands.executeCommand('editor.action.formatRange', range);
+  }));
 
   const diagProvider = new UnusedVariableDiagnosticProvider();
   context.subscriptions.push(diagProvider);
